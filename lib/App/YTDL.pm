@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 
 1;
@@ -22,7 +22,7 @@ App::YTDL - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.001
+Version 0.002
 
 =cut
 
@@ -56,7 +56,7 @@ Kuerbis <cuer2s@gmail.com>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2013-2014 Kuerbis.
+Copyright (C) 2013-2014 Kuerbis.
 
 This program  is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

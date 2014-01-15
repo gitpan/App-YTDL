@@ -36,6 +36,7 @@ END { print SHOW_CURSOR }
 sub download_youtube {
     my ( $opt, $info, $client ) = @_;
     ( $info, my $total_nr ) = get_download_infos( $opt, $info, $client );
+    return if $total_nr == 0;
     for my $video_id ( sort { $info->{$a}{count} <=> $info->{$b}{count} } keys %$info ) {
         try {
             my $file_name_OS = encode_filename( $info->{$video_id}{file_name} );

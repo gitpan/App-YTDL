@@ -3,7 +3,7 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -25,9 +25,6 @@ use App::YTDL::YTDownload    qw(download_youtube);
 use App::YTDL::YTXML         qw(url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash);
 use App::YTDL::GenericFunc   qw(encode_filename);
 use App::YTDL::LWP_UserAgent;
-
-#use warnings FATAL => qw(all);
-#use Data::Dumper;
 
 BEGIN {
     my $encoding_out;
@@ -112,10 +109,9 @@ say "No arguments" and exit if ! @ids;
 
 
 my %ua_opt = ( show_progress => 1 );
-$ua_opt{agent} = $opt->{useragent} if $opt->{useragent};
+$ua_opt{agent} = $opt->{useragent} if $opt->{useragent} ne ' ';
 
 my $client = WWW::YouTube::Download->new();
-
 $client->ua( LWP::UserAgent->new( %ua_opt ) );
 my ( $info ) = parse_arguments( $opt, $client, @ids );
 
@@ -138,7 +134,7 @@ sub parse_arguments {
             $tmp = { $video_id => { type => 'SI', list_id  => 'no' } };
         }
         elsif (    ( $info_id = $id ) =~ s|^c#([^$invalid_char]+)\z|$1|
-                || ( $info_id = $id ) =~ s|^.*/channel/([^$invalid_char]+)|$1|
+                || ( $info_id = $id ) =~ s|^.*/channel/([^$invalid_char]+).*|$1|
                 || ( $info_id = $client->user_id( $id ) ) ne $id
         ) {
             my $channel_id = $info_id;
@@ -293,7 +289,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.001
+Version 0.002
 
 =cut
 
@@ -309,7 +305,7 @@ Version 0.001
 
 When passing only the C<id> instead of the entire C<url> it is needed to prefix every playlist C<id> with C<p#> and every channel C<id> with C<c#>.
 
-Video ids are passed without any prefix.
+Video C<ids> are passed without any prefix.
 
 The C<ids/urls> can be entered after calling C<yt-download> - this is useful if C<urls> contain shell metacharacters like C<&>.
 
@@ -335,7 +331,17 @@ Show this HELP text.
 
 =head2 PATH
 
-Show the path of the executed C<yt-download>, of the log file and of the config file.
+Show the path of the executed C<yt-download>, of the C<log> file and of the C<config> file.
+
+=head2 UserAgent
+
+Set the useragent.
+
+If entered nothing the default useragent (C<Mozilla/5.0>) is used.
+
+If entered C<""> the useragent is set to an empty string.
+
+If entered a single space, the default L<LWP::UserAgent> is used.
 
 =head2 Overwrite
 
@@ -397,7 +403,7 @@ Kuerbis <cuer2s@gmail.com>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2013-2014 Kuerbis.
+Copyright (C) 2013-2014 Kuerbis.
 
 This program  is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

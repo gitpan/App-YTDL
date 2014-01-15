@@ -44,4 +44,4 @@ requires:
   perl: 5.010001
 resources:
   repository: https://github.com/kuerbis/App-YTDL.git
-version: 0.001
+version: 0.002

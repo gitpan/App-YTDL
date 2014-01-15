@@ -75,7 +75,7 @@ sub options {
     my ( $opt ) = @_;
     my $help         = "  HELP";
     my $show_path    = "  PATH";
-    #my $useragent    = "- Set UserAgent";
+    my $useragent    = "- UserAgent";
     my $overwrite    = "- Overwrite files";
     my $auto_fmt     = "- Set auto quality";
     my $preferred    = "- Preferred qualities";
@@ -87,7 +87,7 @@ sub options {
     my %c_hash = (
         $help         => 'show_help_text',
         $show_path    => 'show_path',
-        #$useragent    => 'useragent',
+        $useragent    => 'useragent',
         $overwrite    => 'overwrite',
         $auto_fmt     => 'auto_quality',
         $preferred    => 'preferred',
@@ -100,7 +100,7 @@ sub options {
     my @choices = (
         $help,
         $show_path,
-        #$useragent,
+        $useragent,
         $overwrite,
         $auto_fmt,
         $preferred,
@@ -117,7 +117,7 @@ sub options {
         # Choose
         print "\n";
         my $c_key = choose(
-            [ undef, @choices, $continue ],
+            [ undef, $continue, @choices ],
             { prompt => "Options:", layout => 3, clear_screen => 1, undef => $quit }
         );
         if ( ! defined $c_key ) {
@@ -148,10 +148,12 @@ sub options {
             my $len_key = 13;
             print_hash( $path, $keys, $len_key, ( chars )[0] );
         }
-        #elsif ( $choice eq "useragent" ) {
-        #    my $prompt = 'Set the UserAgent';
-        #    local_read_line( $opt, $choice, $prompt );
-        #}
+        elsif ( $choice eq "useragent" ) {
+            my $prompt = 'Set the UserAgent';
+            local_read_line( $opt, $choice, $prompt );
+            $opt->{useragent} = 'Mozilla/5.0' if $opt->{useragent} eq '';
+            $opt->{useragent} = ''            if $opt->{useragent} eq '""';
+        }
         elsif ( $choice eq "overwrite" ) {
             my $prompt = 'Overwrite files';
             opt_yes_no( $opt, $choice, $prompt );
