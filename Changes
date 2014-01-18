@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.003   2014-01-18
+        - Added option "Auto width".
+        - Update documentation.
+
 0.002   2014-01-15
         - Fixed "channel" regexp.
         - Added option "UserAgent".

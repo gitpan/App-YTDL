@@ -3,7 +3,7 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.002';
+our $VERSION = '0.003';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -72,6 +72,7 @@ my $opt = {
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
     kb_sec_len     => 5,
     max_info_width => 120,
+    auto_width     => 1,
     retries        => 5,
     overwrite      => 0,
     auto_quality   => 1,
@@ -289,7 +290,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.002
+Version 0.003
 
 =cut
 
@@ -388,6 +389,10 @@ Enables info logging.
 =head2 Max info width
 
 Sets the maximum width of video info output.
+
+=head2 Auto width
+
+Increase the info output width automatically if the info text is long.
 
 =head2 Max filename length
 

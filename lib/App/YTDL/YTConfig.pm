@@ -82,6 +82,7 @@ sub options {
     my $retries      = "- Download retries";
     my $logging      = "- Enable logging";
     my $info_width   = "- Max info width";
+    my $auto_width   = "- Enable auto width";
     my $filename_len = "- Max filename length";
     my $len_kb_sec   = "- Digits 'k/s'";
     my %c_hash = (
@@ -94,6 +95,7 @@ sub options {
         $retries      => 'retries',
         $logging      => 'log_info',
         $info_width   => 'max_info_width',
+        $auto_width    => 'auto_width',
         $filename_len => 'max_len_f_name',
         $len_kb_sec   => 'kb_sec_len',
     );
@@ -107,6 +109,7 @@ sub options {
         $retries,
         $logging,
         $info_width,
+        $auto_width,
         $filename_len,
         $len_kb_sec,
     );
@@ -183,6 +186,10 @@ sub options {
             my ( $min, $max ) = ( 40, 500 );
             my $prompt = 'Maximum Info width';
             opt_number( $opt, $choice, $prompt, $min, $max );
+        }
+        elsif ( $choice eq "auto_width" ) {
+            my $prompt = 'Enable auto width';
+            opt_yes_no( $opt, $choice, $prompt );
         }
         elsif ( $choice eq "max_len_f_name" ) {
             my ( $min, $max ) = ( 12, 300 );

@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.002';
+our $VERSION = '0.003';
 
 
 1;
@@ -22,7 +22,7 @@ App::YTDL - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.002
+Version 0.003
 
 =cut
 
@@ -48,7 +48,7 @@ For more info see L<yt-download> or call C<yt-download -h> and choose the option
 
 It is required Perl version 5.10.1 or greater.
 
-See also the requirements mentioned in L<Term::Choose> respectively in L<Term::Choose::Win32>.
+See also the requirements mentioned in L<Term::Choose> respective in L<Term::Choose::Win32>.
 
 =head1 AUTHOR
 

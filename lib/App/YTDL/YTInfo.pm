@@ -163,7 +163,8 @@ sub format_print_info {
     my $key_len = 13;
     my $s_tab = $key_len + length( ' : ' );
     my ( $maxcols, $maxrows ) = chars;
-    my $col_max = $maxcols - $s_tab;
+    $maxcols -= 2;
+    my $col_max = $maxcols;
     $col_max = $col_max > $opt->{max_info_width} ? $opt->{max_info_width} : $col_max;
     my $lf = Text::LineFold->new(
         Charset       => 'utf-8',
@@ -185,41 +186,48 @@ sub format_print_info {
             push @$print_array, $val . "\n";
         }
     }
-#    if ( @$print_array / $maxrows < 1.2 ) {
-#        $col_max += int( $maxcols / 3 );
-#        $col_max = $col_max > $maxcols ? $maxcols : $col_max;
-#        $lf->config( 'ColMax', $col_max );
-#        my $print_array;
-#        for my $key ( @keys ) {
-#            next if ! $info->{$video_id}{$key};
-#            ( my $kk = $key ) =~ s/_/ /g;
-#            my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-#            my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-#            $text =~ s/\R+\z//;
-#            for my $val ( split /\R+/, $text ) {
-#                push @$print_array, $val . "\n";
-#            }
-#        }
-#    }
-#    while ( @$print_array > ( $maxrows - 10 ) ) {
-#        $col_max += 10;
-#        if ( $col_max > ( $maxcols - $s_tab ) ) {
-#            $col_max = $maxcols - $s_tab;
-#        }
-#        $lf->config( 'ColMax', $col_max );
-#        $print_array = [];
-#        for my $key ( @keys ) {
-#            next if ! $info->{$video_id}{$key};
-#            ( my $kk = $key ) =~ s/_/ /g;
-#            my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-#            my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-#            $text =~ s/\R+\z//;
-#            for my $val ( split /\R+/, $text ) {
-#                push @$print_array, $val . "\n";
-#            }
-#        }
-#        last if $col_max == ( $maxcols - $s_tab );
-#    }
+    if ( $opt->{auto_width} ) {
+        my $plus;
+        my $q = @$print_array / $maxrows;
+        my $begin    = 0.70;
+        my $end      = 1.25;
+        my $interval = 0.05;
+        my $div      = ( $end - $begin ) / $interval + 2;
+        if ( $q >= $begin ) {
+            $q = $end if $q > $end;
+            $plus = int( ( ( $maxcols - $col_max ) / $div ) * ( ( $q - $begin  ) / $interval + 1 ) );
+        }
+        if ( $plus ) {
+            $col_max += $plus;
+            $lf->config( 'ColMax', $col_max );
+            $print_array = [];
+            for my $key ( @keys ) {
+                next if ! $info->{$video_id}{$key};
+                ( my $kk = $key ) =~ s/_/ /g;
+                my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
+                my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
+                $text =~ s/\R+\z//;
+                for my $val ( split /\R+/, $text ) {
+                    push @$print_array, $val . "\n";
+                }
+            }
+        }
+        if ( @$print_array > ( $maxrows - 8 ) ) {
+            $col_max = $maxcols;
+            $lf->config( 'ColMax', $col_max );
+            $print_array = [];
+            for my $key ( @keys ) {
+                next if ! $info->{$video_id}{$key};
+                ( my $kk = $key ) =~ s/_/ /g;
+                my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
+                my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
+                $text =~ s/\R+\z//;
+                for my $val ( split /\R+/, $text ) {
+                    push @$print_array, $val . "\n";
+                }
+            }
+        }
+    }
     return $info, $print_array, $key_len;
 }
 
