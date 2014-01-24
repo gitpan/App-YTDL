@@ -44,6 +44,7 @@ sub url_to_entry_node {
     my $xpc = xml_node_to_xpc( $root );
     return $xpc->findnodes( '/xmlns:feed/xmlns:entry' ) if $xpc->exists( '/xmlns:feed/xmlns:entry' );
     my ( $node ) = $xpc->findnodes( '/xmlns:entry' );
+    die "No node found";
     return $node;
 }
 

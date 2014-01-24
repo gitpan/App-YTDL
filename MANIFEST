@@ -12,6 +12,7 @@ MANIFEST			This list of files
 README
 t/compile.t
 xt/cntrl_yt_download.t
+xt/manifest.t
 xt/perl_minimum_version.t
 xt/pod.t
 xt/prereqs.t

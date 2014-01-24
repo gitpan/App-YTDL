@@ -128,7 +128,7 @@ sub get_download_infos {
 sub get_print_info {
     my ( $opt, $info, $client, $video_id ) = @_;
     my $type = $info->{$video_id}{type};
-    if ( $type ne 'PL'  ) {
+    if ( ! $type eq 'PL'  ) {
         my $url = URI->new( 'http://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
         my $entry = url_to_entry_node( $opt, $client, $url );
@@ -187,15 +187,15 @@ sub format_print_info {
         }
     }
     if ( $opt->{auto_width} ) {
+        my $ratio = @$print_array / $maxrows;
+        my $begin = 0.70;
+        my $end   = 1.50;
+        my $step  = 0.0125;
+        my $div   = ( $end - $begin ) / $step + 1;
         my $plus;
-        my $q = @$print_array / $maxrows;
-        my $begin    = 0.70;
-        my $end      = 1.25;
-        my $interval = 0.05;
-        my $div      = ( $end - $begin ) / $interval + 2;
-        if ( $q >= $begin ) {
-            $q = $end if $q > $end;
-            $plus = int( ( ( $maxcols - $col_max ) / $div ) * ( ( $q - $begin  ) / $interval + 1 ) );
+        if ( $ratio >= $begin ) {
+            $ratio = $end if $ratio > $end;
+            $plus = int( ( ( $maxcols - $col_max ) / $div ) * ( ( $ratio - $begin  ) / $step + 1 ) );
         }
         if ( $plus ) {
             $col_max += $plus;
@@ -212,7 +212,7 @@ sub format_print_info {
                 }
             }
         }
-        if ( @$print_array > ( $maxrows - 8 ) ) {
+        if ( @$print_array > ( $maxrows - 6 ) ) {
             $col_max = $maxcols;
             $lf->config( 'ColMax', $col_max );
             $print_array = [];

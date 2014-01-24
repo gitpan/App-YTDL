@@ -3,7 +3,7 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -135,7 +135,6 @@ sub parse_arguments {
             $tmp = { $video_id => { type => 'SI', list_id  => 'no' } };
         }
         elsif (    ( $info_id = $id ) =~ s|^c#([^$invalid_char]+)\z|$1|
-                || ( $info_id = $id ) =~ s|^.*/channel/([^$invalid_char]+).*|$1|
                 || ( $info_id = $client->user_id( $id ) ) ne $id
         ) {
             my $channel_id = $info_id;
@@ -290,7 +289,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.003
+Version 0.004
 
 =cut
 
@@ -410,6 +409,12 @@ Kuerbis <cuer2s@gmail.com>
 
 Copyright (C) 2013-2014 Kuerbis.
 
-This program  is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+This program is free software; you can redistribute it and/or modify it under the same terms
+as Perl 5.10.0.
+
+See http://dev.perl.org/licenses/ for more information.
+
+This program is distributed in the hope that it will be useful, but without any warranty; without even the implied
+warranty of merchantability or fitness for a particular purpose.
 
 =cut
