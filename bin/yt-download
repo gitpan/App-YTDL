@@ -3,7 +3,7 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -289,7 +289,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.004
+Version 0.005
 
 =cut
 

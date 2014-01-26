@@ -60,7 +60,7 @@ sub download_video {
     my $file_basename = basename $info->{$video_id}{file_name};
     print HIDE_CURSOR;
     say '  -----' if $nr > 1;
-    printf "  %s (%s)\n", $file_basename, $info->{$video_id}{duration};
+    printf "  %s (%s)\n", $file_basename, $info->{$video_id}{duration} // '?';
     local $SIG{INT} = sub {
         print cldown, "\n";
         print SHOW_CURSOR;

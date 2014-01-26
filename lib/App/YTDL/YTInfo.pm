@@ -128,7 +128,7 @@ sub get_download_infos {
 sub get_print_info {
     my ( $opt, $info, $client, $video_id ) = @_;
     my $type = $info->{$video_id}{type};
-    if ( ! $type eq 'PL'  ) {
+    if ( ! ( $type eq 'PL' ) ) {
         my $url = URI->new( 'http://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
         my $entry = url_to_entry_node( $opt, $client, $url );
