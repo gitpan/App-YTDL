@@ -12,8 +12,8 @@ our @EXPORT_OK = qw(get_download_infos get_video_url);
 use Encode                qw(decode_utf8);
 use File::Spec::Functions qw(catfile);
 use List::Util            qw(max);
-use Unicode::Normalize    qw(NFC);
 
+use Encode::Locale;
 use List::MoreUtils    qw(any);
 use Term::ANSIScreen   qw(:cursor :screen);
 use Term::Size::Any    qw(chars);
@@ -25,7 +25,7 @@ use URI::Escape        qw(uri_unescape);
 
 use App::YTDL::YTConfig     qw(map_fmt_to_quality);
 use App::YTDL::YTXML        qw(url_to_entry_node entry_node_to_info_hash);
-use App::YTDL::GenericFunc  qw(unicode_trim encode_filename);
+use App::YTDL::GenericFunc  qw(unicode_trim encode_stdout_lax);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {
@@ -71,8 +71,10 @@ sub get_download_infos {
             ( $info, $print_array, $key_len ) = format_print_info( $opt, $info, $video_id );
             print "\n";
             $opt->{up}++;
-            print for map { NFC( $_ ) } @{$print_array};
-            $opt->{up} += @{$print_array};
+            binmode STDOUT, ':pop';
+            print for map { encode_stdout_lax( $_ ) } @$print_array;
+            binmode STDOUT, ':encoding(console_out)';
+            $opt->{up} += @$print_array;
             print "\n";
             $opt->{up}++;
         }
@@ -85,11 +87,7 @@ sub get_download_infos {
         next VIDEO if $failed;
         my $status = $info->{$video_id}{status};
         if ( ! defined $status || $status ne 'ok' ) {
-            my $prompt = $video_id . ': Status not ok - Status ' . ( $status // 'undefined' );
-            choose( [ 'Press ENTER' ], { prompt => $prompt } );
-            delete $info->{$video_id};
-            print up( $opt->{up} ), cldown;
-            $opt->{up} = 0;
+            status_not_ok( $opt, $info, $video_id );
             next VIDEO;
         }
         try {
@@ -110,7 +108,9 @@ sub get_download_infos {
                 $info->{$video_id}{fmt}       = $fmt;
                 $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
                 unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
-                print for map { NFC( $_ ) } @$print_array;
+                binmode STDOUT, ':pop';
+                print for map { encode_stdout_lax( $_ ) } @$print_array;
+                binmode STDOUT, ':encoding(console_out)';
                 print "\n";
             }
         }
@@ -122,6 +122,32 @@ sub get_download_infos {
     }
     print "\n";
     return $info, $count;
+}
+
+
+sub status_not_ok {
+    my ( $opt, $info, $video_id ) = @_;
+    $info->{$video_id}{status} //= 'undefined';
+    my @keys    = ( 'title', 'video_id', 'status', 'errorcode', 'reason' );
+    my $key_len = 10;
+    my $s_tab   = $key_len + length( ' : ' );
+    my $maxcols =  ( chars )[0] - 2;
+    my $lf = Text::LineFold->new( %{$opt->{linefold}} );
+    $lf->config( 'ColMax', $maxcols ) if $opt->{max_info_width} > $maxcols;
+    my $prompt = '  Status NOT OK!' . "\n\n";
+    my $print_array;
+    for my $key ( @keys ) {
+        next if ! $info->{$video_id}{$key};
+        $info->{$video_id}{$key} =~ s/\n+/\n/g;
+        $info->{$video_id}{$key} =~ s/^\s+//;
+        ( my $kk = $key ) =~ s/_/ /g;
+        my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
+        $prompt .= $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
+    }
+    choose( [ 'Press ENTER' ], { prompt => $prompt } );
+    delete $info->{$video_id};
+    print up( $opt->{up} ), cldown;
+    $opt->{up} = 0;
 }
 
 
@@ -154,8 +180,8 @@ sub get_print_info {
 
 sub format_print_info {
     my ( $opt, $info, $video_id ) = @_;
-    my @keys = ( qw( title video_id author duration errorcode reason raters
-                        avg_rating view_count published content description keywords ) ); #status
+    my @keys = ( qw( title video_id author duration raters avg_rating
+                     view_count published content description keywords ) );
     for my $key ( @keys ) {
         next if ! defined $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\R/ /g;
@@ -164,15 +190,9 @@ sub format_print_info {
     my $s_tab = $key_len + length( ' : ' );
     my ( $maxcols, $maxrows ) = chars;
     $maxcols -= 2;
-    my $col_max = $maxcols;
-    $col_max = $col_max > $opt->{max_info_width} ? $opt->{max_info_width} : $col_max;
-    my $lf = Text::LineFold->new(
-        Charset       => 'utf-8',
-        ColMax        => $col_max,
-        Newline       => "\n",
-        OutputCharset => '_UNICODE_',
-        Urgent        => 'FORCE',
-    );
+    my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
+    my $lf = Text::LineFold->new( %{$opt->{linefold}} );
+    $lf->config( 'ColMax', $col_max );
     my $print_array;
     for my $key ( @keys ) {
         next if ! $info->{$video_id}{$key};
@@ -249,8 +269,8 @@ sub get_filename {
     $file_name =~ s/^\.+//;
     #$file_name =~ s/[^\p{Word}.()]/-/g;
     $file_name =~ s/["\/\\:*?<>|]/-/g;
-    # NTFS and FAT unsupported characters: " / \\ : * ? < > |
-    return NFC( $file_name );
+    # NTFS and FAT unsupported characters:  / \ : " * ? < > |
+    return $file_name;
 }
 
 

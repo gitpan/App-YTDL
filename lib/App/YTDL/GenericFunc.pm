@@ -7,29 +7,32 @@ use 5.10.1;
 use utf8;
 
 use Exporter qw(import);
-our @EXPORT_OK = qw(sec_to_time insert_sep unicode_trim encode_filename);
+our @EXPORT_OK = qw(sec_to_time insert_sep unicode_trim encode_fs encode_stdout_lax encode_stdout);
 
-use Encode qw(encode);
+use Encode             qw(encode);
+use Unicode::Normalize qw(NFC);
 
+use Encode::Locale;
 use Unicode::GCString;
 
-my $encoding;
 
-BEGIN {
-    if ( $^O eq 'MSWin32' ) {
-        require Win32::API;
-        Win32::API->Import('kernel32', 'UINT GetACP()');
-        $encoding = 'cp'.GetACP();
-    }
-    else {
-        $encoding = 'utf-8';
-    }
+sub encode_fs {
+    my ( $filename ) = @_;
+    return encode( 'locale_fs', NFC( $filename ), Encode::FB_HTMLCREF );
 }
 
-sub encode_filename {
-    my ( $file ) = @_;
-    return encode( $encoding, $file );
+
+sub encode_stdout_lax {
+    my ( $string ) = @_;
+    return encode( 'console_out', NFC( $string ), sub { '*' } );
 }
+
+
+sub encode_stdout {
+    my ( $string ) = @_;
+    return encode( 'console_out', NFC( $string ), Encode::FB_HTMLCREF );
+}
+
 
 sub sec_to_time {
     my ( $seconds, $long ) = @_;

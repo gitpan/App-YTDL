@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 
 1;
@@ -22,7 +22,7 @@ App::YTDL - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.005
+Version 0.006
 
 =cut
 
@@ -54,16 +54,16 @@ See also the requirements mentioned in L<Term::Choose> respective in L<Term::Cho
 
 Kuerbis <cuer2s@gmail.com>
 
+=head1 CREDITS
+
+Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
+L<stackoverflow|http://stackoverflow.com> for the help.
+
 =head1 LICENSE AND COPYRIGHT
 
 Copyright (C) 2013-2014 Kuerbis.
 
-This program is free software; you can redistribute it and/or modify it under the same terms
-as Perl 5.10.0.
-
-See http://dev.perl.org/licenses/ for more information.
-
-This program is distributed in the hope that it will be useful, but without any warranty; without even the implied
-warranty of merchantability or fitness for a particular purpose.
+This program is free software; you can redistribute it and/or modify it under the same terms as Perl 5.10.0.
+For details, see the full text of the licenses in the file LICENSE.
 
 =cut

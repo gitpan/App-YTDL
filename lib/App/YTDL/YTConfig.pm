@@ -19,7 +19,7 @@ use JSON::XS;
 use Term::Size::Any qw(chars);
 use Text::LineFold;
 
-use App::YTDL::GenericFunc qw(encode_filename);
+use App::YTDL::GenericFunc qw(encode_fs);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {
@@ -149,7 +149,7 @@ sub options {
             };
             my $keys = [ $bin, $video_dir, $log_file, $config_file ];
             my $len_key = 13;
-            print_hash( $path, $keys, $len_key, ( chars )[0] );
+            print_hash( $opt, $path, $keys, $len_key, ( chars )[0] );
         }
         elsif ( $choice eq "useragent" ) {
             my $prompt = 'Set the UserAgent';
@@ -208,20 +208,15 @@ sub options {
 
 
 sub print_hash {
-    my ( $hash, $keys, $len_key, $maxcols ) = @_;
-    my $s_tab = $len_key + length( ' : ' );
+    my ( $opt, $hash, $keys, $len_key, $maxcols ) = @_;
+    my $s_tab   = $len_key + length( ' : ' );
     my $col_max = $maxcols - $s_tab;
-    my $lf = Text::LineFold->new(
-        Charset       => 'utf-8',
-        ColMax        => $col_max,
-        Newline       => "\n",
-        OutputCharset => '_UNICODE_',
-        Urgent        => 'FORCE',
-    );
+    my $lf      = Text::LineFold->new( %{$opt->{line_fold}} );
+    $lf->config( 'ColMax', $col_max );
     my @vals = ();
     for my $key ( @$keys ) {
         my $pr_key = sprintf "%*.*s : ", $len_key, $len_key, $key;
-        my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $hash->{$key} );
+        my $text   = $lf->fold( '' , ' ' x $s_tab, $pr_key . $hash->{$key} );
         $text =~ s/\R+\z//;
         for my $val ( split /\R+/, $text ) {
             push @vals, $val;
@@ -297,16 +292,12 @@ sub opt_choose_a_list {
         push @$available, sprintf "%*d => %s", $len_key, $key, $ref->{$key};
     }
     my $current = $opt->{$section} // [];
-    my $new = [];
+    my $new     = [];
     my $key_cur = 'Current > ';
     my $key_new = '    New > ';
-    my $l_k = length $key_cur > length $key_new ? length $key_cur : length $key_new;
-    my $line_fold = Text::LineFold->new(
-        Charset=> 'utf-8',
-        OutputCharset => '_UNICODE_',
-        Urgent => 'FORCE',
-        ColMax => ( chars )[0],
-    );
+    my $l_k     = length $key_cur > length $key_new ? length $key_cur : length $key_new;
+    my $lf      = Text::LineFold->new( %{$opt->{line_fold}} );
+    $lf->config( 'ColMax', ( chars )[0] );
     while ( 1 ) {
         my $prompt = $key_cur . join( ', ', @$current ) . "\n";
         $prompt   .= $key_new . join( ', ', @$new )     . "\n\n";
@@ -353,7 +344,7 @@ sub read_config_file {
 sub write_json {
     my ( $file, $h_ref ) = @_;
     my $json = JSON::XS->new->pretty->encode( $h_ref );
-    open my $fh, '>', encode_filename( $file ) or die $!;
+    open my $fh, '>', encode_fs( $file ) or die $!;
     print $fh $json;
     close $fh;
 }
@@ -361,8 +352,8 @@ sub write_json {
 
 sub read_json {
     my ( $file ) = @_;
-    return {} if ! -f encode_filename( $file );
-    open my $fh, '<', encode_filename( $file ) or die $!;
+    return {} if ! -f encode_fs( $file);
+    open my $fh, '<', encode_fs( $file ) or die $!;
     my $json = do { local $/; <$fh> };
     close $fh;
     my $h_ref = JSON::XS->new->pretty->decode( $json ) if $json;

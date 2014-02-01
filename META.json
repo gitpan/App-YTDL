@@ -28,6 +28,7 @@
       "runtime" : {
          "requires" : {
             "Encode" : "0",
+            "Encode::Locale" : "0",
             "Exporter" : "0",
             "Fcntl" : "0",
             "File::Basename" : "0",
@@ -64,5 +65,5 @@
          "web" : "https://github.com/kuerbis/App-YTDL"
       }
    },
-   "version" : "0.005"
+   "version" : "0.006"
 }

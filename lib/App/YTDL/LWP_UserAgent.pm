@@ -23,8 +23,8 @@ sub progress {
 
     my $len_tail = length '.[.]';
     print STDERR HIDE_CURSOR;
-    local($,, $\);
-    if ($status eq "begin") {
+    local( $,, $\ );
+    if ( $status eq "begin" ) {
         ( my $width ) = chars( *STDERR );
         my $uri = $m->uri;
         my $len = length( $uri ) + $len_tail;
@@ -32,7 +32,7 @@ sub progress {
         print STDERR $uri;
         $self->{progress_ani} = 0;
     }
-    elsif ($status eq "end") {
+    elsif ( $status eq "end" ) {
         delete $self->{progress_ani};
         print STDERR ' ' x $len_tail, "\n";
     }

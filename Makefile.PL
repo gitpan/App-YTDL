@@ -8,8 +8,6 @@ my %prereqs_in_cpan_os_specific;
 if ( $^O eq 'MSWin32' ) {
     %prereqs_in_cpan_os_specific = (
         'Term::Choose::Win32'  => 0,
-        'Win32::API'           => 0,
-        'Win32::Console'       => 0,
         'Win32::Console::ANSI' => 0,
     );
 }
@@ -18,7 +16,6 @@ else {
         'Term::Choose'         => 0,
     );
 }
-
 
 WriteMakefile(
     PL_FILES         => {},
@@ -43,6 +40,7 @@ WriteMakefile(
     },
     PREREQ_PM => {
         'Encode'                 => 0,
+        'Encode::Locale'         => 0,
         'Exporter'               => 0,
         'Fcntl'                  => 0,
         'File::Basename'         => 0,

@@ -9,15 +9,16 @@ use utf8;
 use Exporter qw(import);
 our @EXPORT_OK = qw(download_youtube);
 
-use Fcntl          qw(LOCK_EX SEEK_END);
-use File::Basename qw(basename);
-use Time::HiRes    qw(gettimeofday tv_interval);
+use Fcntl              qw(LOCK_EX SEEK_END);
+use File::Basename     qw(basename);
+use Time::HiRes        qw(gettimeofday tv_interval);
 
+use Encode::Locale;
 use Term::ANSIScreen qw(:cursor :screen);
 use Try::Tiny        qw(try catch);
 
 use App::YTDL::YTInfo       qw(get_download_infos get_video_url);
-use App::YTDL::GenericFunc  qw(sec_to_time insert_sep encode_filename);
+use App::YTDL::GenericFunc  qw(sec_to_time insert_sep encode_fs encode_stdout);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {
@@ -39,7 +40,7 @@ sub download_youtube {
     return if $total_nr == 0;
     for my $video_id ( sort { $info->{$a}{count} <=> $info->{$b}{count} } keys %$info ) {
         try {
-            my $file_name_OS = encode_filename( $info->{$video_id}{file_name} );
+            my $file_name_OS = encode_fs( $info->{$video_id}{file_name} );
             unlink $file_name_OS or die $! if -f $file_name_OS && $opt->{overwrite};
             $client->ua->show_progress( 0 );
             download_video( $opt, $info, $client, $total_nr, $video_id );
@@ -54,13 +55,16 @@ sub download_youtube {
 
 sub download_video {
     my ( $opt, $info, $client, $total_nr, $video_id ) = @_;
-    my $file_name_OS  = encode_filename( $info->{$video_id}{file_name} );
     my $nr            = $info->{$video_id}{count};
     my $video_url     = $info->{$video_id}{video_url};
-    my $file_basename = basename $info->{$video_id}{file_name};
+    my $file_name     = $info->{$video_id}{file_name};
+    my $file_name_OS  = encode_fs( $file_name );
+    my $file_basename = basename $file_name;
     print HIDE_CURSOR;
     say '  -----' if $nr > 1;
-    printf "  %s (%s)\n", $file_basename, $info->{$video_id}{duration} // '?';
+    binmode STDOUT, ':pop';
+    printf "  %s (%s)\n", encode_stdout( $file_basename ), $info->{$video_id}{duration} // '?';
+    binmode STDOUT, ':encoding(console_out)';
     local $SIG{INT} = sub {
         print cldown, "\n";
         print SHOW_CURSOR;
@@ -105,7 +109,7 @@ sub download_video {
                     $part2 .= sprintf "   avg %2sk/s", $p->{kbs_avg} if $p->{kbs_avg};
                 }
                 elsif ( $status =~ /^20[06]\z/ ) {
-                    $part2 .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg};
+                    $part2 .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg} || '--';
                 }
             }
             printf p_fmt( $opt, 'status' ), $dl_time, $status, $part2;
@@ -142,7 +146,7 @@ sub log_info {
         . ' | ' . ( $info->{$video_id}{published} // '0000-00-00' )
         . '   ' . basename( $info->{$video_id}{file_name}
     );
-    open my $log, '>>:encoding(UTF-8)', encode_filename( $opt->{log_file} ) or die $!;
+    open my $log, '>>:encoding(UTF-8)', encode_fs( $opt->{log_file} ) or die $!;
     flock $log, LOCK_EX     or die $!;
     seek  $log, 0, SEEK_END or die $!;
     say   $log $log_str;

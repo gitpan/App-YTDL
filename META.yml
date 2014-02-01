@@ -17,6 +17,7 @@ no_index:
     - inc
 requires:
   Encode: 0
+  Encode::Locale: 0
   Exporter: 0
   Fcntl: 0
   File::Basename: 0
@@ -44,4 +45,4 @@ requires:
   perl: 5.010001
 resources:
   repository: https://github.com/kuerbis/App-YTDL.git
-version: 0.005
+version: 0.006

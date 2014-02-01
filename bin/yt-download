@@ -1,15 +1,17 @@
 #!/usr/local/bin/perl
+use warnings;
 use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
 use Getopt::Long          qw(GetOptions);
 use Pod::Usage            qw(pod2usage);
 
+use Encode::Locale;
 use File::HomeDir          qw(my_videos);
 use List::MoreUtils        qw(any);
 use LWP::UserAgent;
@@ -20,28 +22,26 @@ use URI;
 use URI::Escape            qw(uri_unescape);
 use WWW::YouTube::Download qw(video_id playlist_id channel_id);
 
-use App::YTDL::YTConfig      qw(read_config_file options);
-use App::YTDL::YTDownload    qw(download_youtube);
-use App::YTDL::YTXML         qw(url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash);
-use App::YTDL::GenericFunc   qw(encode_filename);
+use App::YTDL::YTConfig       qw(read_config_file options);
+use App::YTDL::YTDownload     qw(download_youtube);
+use App::YTDL::YTXML          qw(url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash);
 use App::YTDL::LWP_UserAgent;
+use App::YTDL::GenericFunc    qw(encode_fs);
 
 BEGIN {
-    my $encoding_out;
     if ( $^O eq 'MSWin32' ) {
         require Term::Choose::Win32;
         Term::Choose::Win32::->import( 'choose' );
-        require Win32::Console;
-        $encoding_out = 'cp' . Win32::Console::OutputCP(); # GetConsoleOutputCP
+        require Win32::Console::ANSI;
     }
     else {
         require Term::Choose;
         Term::Choose::->import( 'choose' );
-        $encoding_out = 'utf-8';
     }
-    binmode STDOUT, ":encoding( $encoding_out )";
+    Encode::Locale::decode_argv();
 }
 
+binmode STDOUT, ':encoding(console_out)';
 
 my ( $arg_file, $help );
 GetOptions( 'f|file=s@' => \$arg_file, 'h|?|help' => \$help )
@@ -67,7 +67,7 @@ my $opt = {
     config_file    => catfile( $config_dir, 'yt_config.txt' ),
     log_file       => catfile( $config_dir, 'yt_download.log' ),
     log_info       => 1,
-    max_len_f_name => 70,
+    max_len_f_name => 62,
     yt_api_v       => 2,
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
     kb_sec_len     => 5,
@@ -78,13 +78,22 @@ my $opt = {
     auto_quality   => 1,
     preferred      => [ 43 ],
 };
+
+$opt->{linefold} = {
+    Charset       => 'utf-8',
+    ColMax        => $opt->{max_info_width},
+    Newline       => "\n",
+    OutputCharset => '_UNICODE_',
+    Urgent        => 'FORCE',
+};
+
 $opt = read_config_file( $opt, $opt->{config_file} );
 $opt = options( $opt ) if $help;
 
 my @ids;
 
 for my $file ( @$arg_file ) {
-    open my $fh, '<:encoding(utf-8)', encode_filename( $file ) or die $!;
+    open my $fh, '<:encoding(utf-8)', encode_fs( $file ) or die $!;
     while ( my $line = <$fh> ) {
         next if $line =~ /^\s*\z/;
         next if $line =~ /^\s*#/;
@@ -97,7 +106,7 @@ for my $file ( @$arg_file ) {
 local $| = 1;
 print locate( 1, 1 ), cldown;
 
-push @ids, map { decode( 'utf-8', $_ ) } @ARGV;
+push @ids, @ARGV;
 if ( ! @ids ) {
     print 'Enter url/id: ';
     my $ids = <>;
@@ -113,6 +122,7 @@ my %ua_opt = ( show_progress => 1 );
 $ua_opt{agent} = $opt->{useragent} if $opt->{useragent} ne ' ';
 
 my $client = WWW::YouTube::Download->new();
+
 $client->ua( LWP::UserAgent->new( %ua_opt ) );
 my ( $info ) = parse_arguments( $opt, $client, @ids );
 
@@ -289,7 +299,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.005
+Version 0.006
 
 =cut
 
@@ -303,13 +313,16 @@ Version 0.005
 
     yt-download -f|--file filename
 
-When passing only the C<id> instead of the entire C<url> it is needed to prefix every playlist C<id> with C<p#> and every channel C<id> with C<c#>.
+When passing only the C<id> instead of the entire C<url> it is needed to prefix every playlist C<id> with C<p#> and
+every channel C<id> with C<c#>.
 
 Video C<ids> are passed without any prefix.
 
-The C<ids/urls> can be entered after calling C<yt-download> - this is useful if C<urls> contain shell metacharacters like C<&>.
+The C<ids/urls> can be entered after calling C<yt-download> - this is useful if C<urls> contain shell metacharacters
+like C<&>.
 
-The option C<-f/--file> expects as its value a filename. This file should contain a list of space separated C<urls> respectively C<ids>.
+The option C<-f/--file> expects as its value a filename. This file should contain a list of space separated C<urls>
+respectively C<ids>.
 
 =head1 DESCRIPTION
 
@@ -321,7 +334,8 @@ Instead of choosing the quality manually it is possible to set and use preferred
 
 To set the different options call C<yt-download -h>.
 
-It is assumed C<UTF-8> as the console output encoding except for C<MSWin32> C<OS> where the output encoding is detected automatically. But it is recommended also for C<MSWin32> C<OS> to work with an C<UTF> encoding since non mappable characters on the output or in filenames might break the execution of the script.
+It is recommended to work with an C<UTF> encoding. Non mappable characters on the output are replaced with C<*>; in file
+names they are replaced with C<&#xNNN;> where C<NNN> is the Unicode code point in a decimal number.
 
 =head1 Options
 
@@ -405,16 +419,16 @@ Sets the number of digits allocated for the "kilobyte per seconds" output.
 
 Kuerbis <cuer2s@gmail.com>
 
+=head1 CREDITS
+
+Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
+L<stackoverflow|http://stackoverflow.com> for the help.
+
 =head1 LICENSE AND COPYRIGHT
 
 Copyright (C) 2013-2014 Kuerbis.
 
-This program is free software; you can redistribute it and/or modify it under the same terms
-as Perl 5.10.0.
-
-See http://dev.perl.org/licenses/ for more information.
-
-This program is distributed in the hope that it will be useful, but without any warranty; without even the implied
-warranty of merchantability or fitness for a particular purpose.
+This program is free software; you can redistribute it and/or modify it under the same terms as Perl 5.10.0. For
+details, see the full text of the licenses in the file LICENSE.
 
 =cut

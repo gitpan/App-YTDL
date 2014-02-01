@@ -1,6 +1,13 @@
 Revision history for App-YTDL
 
 
+0.006   2014-02-01
+        - Added LICENSE file.
+        - Detect encodings.
+        - Handle not mappable characters.
+        - Code refactoring.
+        - Update documentation.
+
 0.005   2014-01-26
         - Fixed precedence bug.
 
