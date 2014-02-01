@@ -4,7 +4,7 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -214,15 +214,23 @@ sub list_id_to_info_hash {
     while ( $count_e_nodes == $max_results ) {  # or <link rel='next'>
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
+        my $stop = 0;
         try {
             my @e_nodes = url_to_entry_node( $opt, $client, $url->as_string );
+            if ( ! @e_nodes ) {
+                $stop = 1;
+                die "NO NODES";
+            }
             $count_e_nodes = @e_nodes;
             $info = entry_nodes_to_info_hash( $opt, $info, $client, \@e_nodes, $type, $list_id );
         }
         catch {
-            my $prompt = "$type : $list_id - $_";
-            choose( [ 'Print ENTER' ], { prompt => $prompt } );
+            if ( $_ !~ /^NO NODES/ ) {
+                my $prompt = "$type : $list_id - $_";
+                choose( [ 'Print ENTER' ], { prompt => $prompt } );
+            }
         };
+        last if $stop;
     }
     if ( ! keys %$info ) {
         my $prompt = "No videos found: $type - $url";
@@ -299,7 +307,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.006
+Version 0.007
 
 =cut
 

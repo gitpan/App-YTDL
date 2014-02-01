@@ -1,6 +1,9 @@
 Revision history for App-YTDL
 
 
+0.007   2014-02-01
+        - Handle empty entrynodes.
+
 0.006   2014-02-01
         - Added LICENSE file.
         - Detect encodings.

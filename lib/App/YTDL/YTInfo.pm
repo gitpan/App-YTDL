@@ -23,9 +23,9 @@ use Unicode::GCString;
 use URI;
 use URI::Escape        qw(uri_unescape);
 
-use App::YTDL::YTConfig     qw(map_fmt_to_quality);
-use App::YTDL::YTXML        qw(url_to_entry_node entry_node_to_info_hash);
-use App::YTDL::GenericFunc  qw(unicode_trim encode_stdout_lax);
+use App::YTDL::YTConfig    qw(map_fmt_to_quality);
+use App::YTDL::YTXML       qw(url_to_entry_node entry_node_to_info_hash);
+use App::YTDL::GenericFunc qw(unicode_trim encode_stdout_lax);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {

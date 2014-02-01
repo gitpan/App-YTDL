@@ -9,16 +9,16 @@ use utf8;
 use Exporter qw(import);
 our @EXPORT_OK = qw(download_youtube);
 
-use Fcntl              qw(LOCK_EX SEEK_END);
-use File::Basename     qw(basename);
-use Time::HiRes        qw(gettimeofday tv_interval);
+use Fcntl          qw(LOCK_EX SEEK_END);
+use File::Basename qw(basename);
+use Time::HiRes    qw(gettimeofday tv_interval);
 
 use Encode::Locale;
 use Term::ANSIScreen qw(:cursor :screen);
 use Try::Tiny        qw(try catch);
 
-use App::YTDL::YTInfo       qw(get_download_infos get_video_url);
-use App::YTDL::GenericFunc  qw(sec_to_time insert_sep encode_fs encode_stdout);
+use App::YTDL::YTInfo      qw(get_download_infos get_video_url);
+use App::YTDL::GenericFunc qw(sec_to_time insert_sep encode_fs encode_stdout);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {

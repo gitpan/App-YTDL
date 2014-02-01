@@ -42,9 +42,15 @@ sub url_to_entry_node {
     my ( $opt, $client, $url ) = @_;
     my $root = get_xml_root( $opt, $client, $url );
     my $xpc = xml_node_to_xpc( $root );
-    return $xpc->findnodes( '/xmlns:feed/xmlns:entry' ) if $xpc->exists( '/xmlns:feed/xmlns:entry' );
-    my ( $node ) = $xpc->findnodes( '/xmlns:entry' );
-    return $node;
+    if ( $xpc->exists( '/xmlns:feed/xmlns:entry' ) ) {
+        my @nodes = $xpc->findnodes( '/xmlns:feed/xmlns:entry' ) if $xpc->exists( '/xmlns:feed/xmlns:entry' );
+        return @nodes if @nodes;
+    }
+    else {
+        my ( $node ) = $xpc->findnodes( '/xmlns:entry' );
+        return $node if $node;
+    }
+    return;
 }
 
 
@@ -66,11 +72,12 @@ sub entry_nodes_to_video_ids {
 
 sub entry_node_to_info_hash {
     my ( $opt, $info, $entry, $type, $list_id ) = @_;
+    die '$entry node not defined!' if ! defined $entry;
     my $xpc = xml_node_to_xpc( $entry );
     my $uri = URI->new( $xpc->findvalue( './media:group/media:player/@url' ) );
     my %params = $uri->query_form;
     my $video_id = uri_escape( $params{v} );
-    die 'list_id: empty $entry node' if ! $video_id;
+    die 'list_id: empty $entry node!' if ! $video_id;
     my $title       = $xpc->findvalue( './media:group/media:title' );
     my $description = $xpc->findvalue( './media:group/media:description' );
     my $keywords    = $xpc->findvalue( './media:group/media:keywords' );
