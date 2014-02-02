@@ -4,14 +4,14 @@ use strict;
 use 5.10.1;
 use utf8;
 
-our $VERSION = '0.007';
+our $VERSION = '0.008';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
 use Getopt::Long          qw(GetOptions);
 use Pod::Usage            qw(pod2usage);
 
-use Encode::Locale;
+use Encode::Locale         qw(decode_argv);
 use File::HomeDir          qw(my_videos);
 use List::MoreUtils        qw(any);
 use LWP::UserAgent;
@@ -29,6 +29,7 @@ use App::YTDL::LWP_UserAgent;
 use App::YTDL::GenericFunc    qw(encode_fs);
 
 BEGIN {
+    decode_argv(); # not at the end of the BEGIN block
     if ( $^O eq 'MSWin32' ) {
         require Term::Choose::Win32;
         Term::Choose::Win32::->import( 'choose' );
@@ -38,7 +39,6 @@ BEGIN {
         require Term::Choose;
         Term::Choose::->import( 'choose' );
     }
-    Encode::Locale::decode_argv();
 }
 
 binmode STDOUT, ':encoding(console_out)';
@@ -214,23 +214,16 @@ sub list_id_to_info_hash {
     while ( $count_e_nodes == $max_results ) {  # or <link rel='next'>
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
-        my $stop = 0;
         try {
             my @e_nodes = url_to_entry_node( $opt, $client, $url->as_string );
-            if ( ! @e_nodes ) {
-                $stop = 1;
-                die "NO NODES";
-            }
             $count_e_nodes = @e_nodes;
             $info = entry_nodes_to_info_hash( $opt, $info, $client, \@e_nodes, $type, $list_id );
         }
         catch {
-            if ( $_ !~ /^NO NODES/ ) {
-                my $prompt = "$type : $list_id - $_";
-                choose( [ 'Print ENTER' ], { prompt => $prompt } );
-            }
+            my $prompt = "$type : $list_id - $_";
+            choose( [ 'Print ENTER' ], { prompt => $prompt } );
         };
-        last if $stop;
+        last if ! $count_e_nodes;
     }
     if ( ! keys %$info ) {
         my $prompt = "No videos found: $type - $url";
@@ -307,7 +300,7 @@ C<yt-download> - Download C<YouTube> videos.
 
 =head1 VERSION
 
-Version 0.007
+Version 0.008
 
 =cut
 

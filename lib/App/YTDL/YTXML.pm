@@ -73,11 +73,12 @@ sub entry_nodes_to_video_ids {
 sub entry_node_to_info_hash {
     my ( $opt, $info, $entry, $type, $list_id ) = @_;
     die '$entry node not defined!' if ! defined $entry;
+    die 'empty $entry node!'       if ! $entry;
     my $xpc = xml_node_to_xpc( $entry );
     my $uri = URI->new( $xpc->findvalue( './media:group/media:player/@url' ) );
     my %params = $uri->query_form;
     my $video_id = uri_escape( $params{v} );
-    die 'list_id: empty $entry node!' if ! $video_id;
+    die 'no video_id!' if ! $video_id;
     my $title       = $xpc->findvalue( './media:group/media:title' );
     my $description = $xpc->findvalue( './media:group/media:description' );
     my $keywords    = $xpc->findvalue( './media:group/media:keywords' );
