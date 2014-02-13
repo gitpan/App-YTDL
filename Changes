@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.009   2014-02-13
+        - Update exit messages.
+        - Update documentation.
+
 0.008   2014-02-02
         - Fixed bug: moved "decode_argv()" to the beginning of the BEGIN block.
         - Code refactoring.

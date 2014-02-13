@@ -39,9 +39,10 @@ BEGIN {
 }
 
 use constant {
-    DELETE => -1,
-    APPEND => -2,
-    REDO   => -3,
+    QUIT   => -1,
+    DELETE => -2,
+    APPEND => -3,
+    REDO   => -4,
 };
 
 
@@ -97,6 +98,11 @@ sub get_download_infos {
             print up( $opt->{up} ), cldown;
             $opt->{up} = 0;
             if ( $fmt < 0 ) {
+                if ( $fmt == QUIT ) {
+                    print locate( 1, 1 ), cldown;
+                    say "Quit";
+                    exit;
+                }
                 delete  $info->{$video_id}    if $fmt == DELETE;
                 push    @video_ids, $video_id if $fmt == APPEND;
                 unshift @video_ids, $video_id if $fmt == REDO;
@@ -132,8 +138,9 @@ sub status_not_ok {
     my $key_len = 10;
     my $s_tab   = $key_len + length( ' : ' );
     my $maxcols =  ( chars )[0] - 2;
+    my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
     my $lf = Text::LineFold->new( %{$opt->{linefold}} );
-    $lf->config( 'ColMax', $maxcols ) if $opt->{max_info_width} > $maxcols;
+    $lf->config( 'ColMax', $col_max );
     my $prompt = '  Status NOT OK!' . "\n\n";
     my $print_array;
     for my $key ( @keys ) {
@@ -378,10 +385,10 @@ sub set_fmt {
     if ( ! defined $fmt_res ) {
         my ( $delete, $append, $redo ) = ( 'Delete', 'Append', 'Redo' );
         my $choice = choose(
-            [ undef, $append, $delete, $redo ],
+            [ undef, $delete, $append, $redo ],
             { prompt => 'Your choice: ', undef => $opt->{quit} }
         );
-        exit if ! defined $choice;
+        $fmt = QUIT   if ! defined $choice;
         $fmt = DELETE if $choice eq $delete;
         $fmt = APPEND if $choice eq $append;
         $fmt = REDO   if $choice eq $redo;

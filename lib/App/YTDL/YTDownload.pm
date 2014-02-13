@@ -37,7 +37,11 @@ END { print SHOW_CURSOR }
 sub download_youtube {
     my ( $opt, $info, $client ) = @_;
     ( $info, my $total_nr ) = get_download_infos( $opt, $info, $client );
-    return if $total_nr == 0;
+    if ( $total_nr == 0 ) {
+        print locate( 1, 1 ), cldown;
+        say "No videos";
+        return;
+    }
     for my $video_id ( sort { $info->{$a}{count} <=> $info->{$b}{count} } keys %$info ) {
         try {
             my $file_name_OS = encode_fs( $info->{$video_id}{file_name} );
@@ -50,6 +54,7 @@ sub download_youtube {
             say "$video_id - $_";
         }
     }
+    return;
 }
 
 

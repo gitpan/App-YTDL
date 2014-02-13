@@ -304,10 +304,18 @@ sub opt_choose_a_list {
         $prompt   .= 'Choose:';
         # Choose
         my $val = choose(
-            [ undef, map( "  $_", @$available ), $opt->{confirm} ],
+            [ undef, $opt->{confirm}, map( "  $_", @$available ) ],
             { prompt => $prompt, lf => [0,$l_k], layout => 3, clear_screen => 1, undef => $opt->{back} }
         );
-        return if ! defined $val;
+        if ( ! defined $val ) {
+            if ( @$new ) {
+                $new = [];
+                next;
+            }
+            else {
+                return;
+            }
+        }
         if ( $val eq $opt->{confirm} ) {
             if ( @$new ) {
                 $opt->{$section} = $new;

@@ -2,9 +2,8 @@
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
-our $VERSION = '0.008';
+our $VERSION = '0.009';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -29,7 +28,7 @@ use App::YTDL::LWP_UserAgent;
 use App::YTDL::GenericFunc    qw(encode_fs);
 
 BEGIN {
-    decode_argv(); # not at the end of the BEGIN block
+    decode_argv(); # not at the end of the BEGIN block if perl < 5.16.0
     if ( $^O eq 'MSWin32' ) {
         require Term::Choose::Win32;
         Term::Choose::Win32::->import( 'choose' );
@@ -67,6 +66,7 @@ my $opt = {
     config_file    => catfile( $config_dir, 'yt_config.txt' ),
     log_file       => catfile( $config_dir, 'yt_download.log' ),
     log_info       => 1,
+    linefold       => { Charset => 'utf-8', Newline => "\n", OutputCharset => '_UNICODE_', Urgent => 'FORCE' },
     max_len_f_name => 62,
     yt_api_v       => 2,
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
@@ -79,13 +79,6 @@ my $opt = {
     preferred      => [ 43 ],
 };
 
-$opt->{linefold} = {
-    Charset       => 'utf-8',
-    ColMax        => $opt->{max_info_width},
-    Newline       => "\n",
-    OutputCharset => '_UNICODE_',
-    Urgent        => 'FORCE',
-};
 
 $opt = read_config_file( $opt, $opt->{config_file} );
 $opt = options( $opt ) if $help;
@@ -296,11 +289,11 @@ __END__
 
 =head1 NAME
 
-C<yt-download> - Download C<YouTube> videos.
+C<yt-download> - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.008
+Version 0.009
 
 =cut
 
@@ -314,20 +307,20 @@ Version 0.008
 
     yt-download -f|--file filename
 
-When passing only the C<id> instead of the entire C<url> it is needed to prefix every playlist C<id> with C<p#> and
-every channel C<id> with C<c#>.
+When passing only the id instead of the entire url it is needed to prefix every playlist id with C<p#> and
+every channel id with C<c#>.
 
-Video C<ids> are passed without any prefix.
+Video ids are passed without any prefix.
 
-The C<ids/urls> can be entered after calling C<yt-download> - this is useful if C<urls> contain shell metacharacters
+The ids/urls can be entered after calling C<yt-download> - this is useful if urls contain shell metacharacters
 like C<&>.
 
-The option C<-f/--file> expects as its value a filename. This file should contain a list of space separated C<urls>
-respectively C<ids>.
+The ids/urls can also be passed with a file: C<yt-download -f|--file filename>. The urls/id in the file have to be space
+separated.
 
 =head1 DESCRIPTION
 
-Download single C<YouTube> videos or/and choose videos from playlists or/and channels.
+Download single YouTube videos or/and choose videos from playlists or/and channels.
 
 Before the download the script shows some video info and lets you choose the video quality from the available qualities.
 
@@ -335,8 +328,8 @@ Instead of choosing the quality manually it is possible to set and use preferred
 
 To set the different options call C<yt-download -h>.
 
-It is recommended to work with an C<UTF> encoding. Non mappable characters on the output are replaced with C<*>; in file
-names they are replaced with C<&#xNNN;> where C<NNN> is the Unicode code point in a decimal number.
+It is recommended to work with an UTF encoding. Non mappable characters on the output are replaced with C<*>; in file
+names they are replaced with C<&#xNNN;> where NNN is the Unicode code point in a decimal number.
 
 =head1 Options
 
@@ -346,13 +339,13 @@ Show this HELP text.
 
 =head2 PATH
 
-Show the path of the executed C<yt-download>, of the C<log> file and of the C<config> file.
+Show the path of the executed C<yt-download>, of the log file and of the configuration file.
 
 =head2 UserAgent
 
 Set the useragent.
 
-If entered nothing the default useragent (C<Mozilla/5.0>) is used.
+If entered nothing the default useragent (Mozilla/5.0) is used.
 
 If entered C<""> the useragent is set to an empty string.
 
@@ -421,6 +414,8 @@ Sets the number of digits allocated for the "kilobyte per seconds" output.
 Kuerbis <cuer2s@gmail.com>
 
 =head1 CREDITS
+
+Essential parts of this application are using methods of the L<WWW::YouTube::Download> module.
 
 Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
 L<stackoverflow|http://stackoverflow.com> for the help.
