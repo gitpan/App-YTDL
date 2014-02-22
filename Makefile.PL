@@ -4,15 +4,15 @@ use strict;
 use ExtUtils::MakeMaker;
 
 
-my %prereqs_in_cpan_os_specific;
+my %prereqs_os_specific;
 if ( $^O eq 'MSWin32' ) {
-    %prereqs_in_cpan_os_specific = (
+    %prereqs_os_specific = (
         'Term::Choose::Win32'  => 0,
         'Win32::Console::ANSI' => 0,
     );
 }
 else {
-    %prereqs_in_cpan_os_specific = (
+    %prereqs_os_specific = (
         'Term::Choose'         => 0,
     );
 }
@@ -64,7 +64,7 @@ WriteMakefile(
         'URI::Escape'            => 0,
         'WWW::YouTube::Download' => 0,
         'XML::LibXML'            => 0,
-        %prereqs_in_cpan_os_specific,
+        %prereqs_os_specific,
     },
     clean => {
         FILES => 'App-YTDL-*',

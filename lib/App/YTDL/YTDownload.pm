@@ -4,7 +4,6 @@ App::YTDL::YTDownload;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use Exporter qw(import);
 our @EXPORT_OK = qw(download_youtube);

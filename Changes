@@ -1,6 +1,9 @@
 Revision history for App-YTDL
 
 
+0.010   2014-02-22
+        - Bugfix: if OS is "MSWin32" -> term-width - 1 (windows console behaves differently).
+
 0.009   2014-02-13
         - Update exit messages.
         - Update documentation.

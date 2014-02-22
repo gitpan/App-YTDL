@@ -4,11 +4,16 @@ App::YTDL::LWP_UserAgent;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use parent qw(LWP::UserAgent);
 
-use Term::Size::Any qw(chars);
+use App::YTDL::GenericFunc qw(term_size);
+
+BEGIN {
+    if ( $^O eq 'MSWin32' ) {
+        require Win32::Console::ANSI;
+    }
+}
 
 use constant {
     HIDE_CURSOR => "\e[?25l",
@@ -25,7 +30,7 @@ sub progress {
     print STDERR HIDE_CURSOR;
     local( $,, $\ );
     if ( $status eq "begin" ) {
-        ( my $width ) = chars( *STDERR );
+        ( my $width ) = term_size( *STDERR );
         my $uri = $m->uri;
         my $len = length( $uri ) + $len_tail;
         $uri = $len > $width ? substr( $uri, -( $width - $len_tail ) ) : $uri;

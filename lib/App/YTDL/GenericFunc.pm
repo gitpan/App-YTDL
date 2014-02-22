@@ -4,17 +4,29 @@ App::YTDL::GenericFunc;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use Exporter qw(import);
-our @EXPORT_OK = qw(sec_to_time insert_sep unicode_trim encode_fs encode_stdout_lax encode_stdout);
+our @EXPORT_OK = qw(term_size sec_to_time insert_sep unicode_trim encode_fs encode_stdout_lax encode_stdout);
 
 use Encode             qw(encode);
 use Unicode::Normalize qw(NFC);
 
 use Encode::Locale;
+use Term::Size::Any    qw(chars);
 use Unicode::GCString;
 
+
+sub term_size {
+    my ( $handle_out ) = @_;
+    $handle_out //= \*STDOUT;
+    if ( $^O eq 'MSWin32' ) {
+        my ( $width, $height ) = chars( $handle_out );
+        return $width - 1, $height;
+    }
+    else {
+        return ( chars( $handle_out ) )[0,1];
+    }
+}
 
 sub encode_fs {
     my ( $filename ) = @_;

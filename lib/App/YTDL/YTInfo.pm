@@ -4,7 +4,6 @@ App::YTDL::YTInfo;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_download_infos get_video_url);
@@ -16,7 +15,6 @@ use List::Util            qw(max);
 use Encode::Locale;
 use List::MoreUtils    qw(any);
 use Term::ANSIScreen   qw(:cursor :screen);
-use Term::Size::Any    qw(chars);
 use Text::LineFold;
 use Try::Tiny          qw(try catch);
 use Unicode::GCString;
@@ -25,7 +23,7 @@ use URI::Escape        qw(uri_unescape);
 
 use App::YTDL::YTConfig    qw(map_fmt_to_quality);
 use App::YTDL::YTXML       qw(url_to_entry_node entry_node_to_info_hash);
-use App::YTDL::GenericFunc qw(unicode_trim encode_stdout_lax);
+use App::YTDL::GenericFunc qw(term_size unicode_trim encode_stdout_lax);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {
@@ -48,7 +46,7 @@ use constant {
 
 sub get_download_infos {
     my ( $opt, $info, $client ) = @_;
-    my ( $cols, $rows ) = chars;
+    my ( $cols, $rows ) = term_size();
     print "\n\n\n", '=' x $cols, "\n\n", "\n" x $rows;
     print locate( 1, 1 ), cldown;
     say 'Dir  : ', $opt->{youtube_dir};
@@ -137,7 +135,7 @@ sub status_not_ok {
     my @keys    = ( 'title', 'video_id', 'status', 'errorcode', 'reason' );
     my $key_len = 10;
     my $s_tab   = $key_len + length( ' : ' );
-    my $maxcols =  ( chars )[0] - 2;
+    my $maxcols =  ( term_size() )[0] - $opt->{right_margin};
     my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
     my $lf = Text::LineFold->new( %{$opt->{linefold}} );
     $lf->config( 'ColMax', $col_max );
@@ -195,8 +193,8 @@ sub format_print_info {
     }
     my $key_len = 13;
     my $s_tab = $key_len + length( ' : ' );
-    my ( $maxcols, $maxrows ) = chars;
-    $maxcols -= 2;
+    my ( $maxcols, $maxrows ) = term_size();
+    $maxcols -= $opt->{right_margin};
     my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
     my $lf = Text::LineFold->new( %{$opt->{linefold}} );
     $lf->config( 'ColMax', $col_max );

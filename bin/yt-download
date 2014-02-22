@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 use Encode                qw(decode);
 use File::Spec::Functions qw(catdir catfile curdir);
@@ -15,7 +15,6 @@ use File::HomeDir          qw(my_videos);
 use List::MoreUtils        qw(any);
 use LWP::UserAgent;
 use Term::ANSIScreen       qw(:cursor :screen);
-use Term::Size::Any        qw(chars);
 use Try::Tiny              qw(try catch);
 use URI;
 use URI::Escape            qw(uri_unescape);
@@ -72,6 +71,7 @@ my $opt = {
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
     kb_sec_len     => 5,
     max_info_width => 120,
+    right_margin   => $^O eq 'MSWin32' ? 1 : 2,
     auto_width     => 1,
     retries        => 5,
     overwrite      => 0,
@@ -168,7 +168,6 @@ sub parse_arguments {
 
 sub choose_from_list {
     my ( $opt, $info ) = @_;
-    my ( $maxcols ) = chars;
     my @video_list;
     my @pl = grep { $_ ne $opt->{back} }
              sort {    $info->{$a}{published} cmp $info->{$b}{published}
@@ -293,7 +292,7 @@ C<yt-download> - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.009
+Version 0.010
 
 =cut
 
@@ -339,7 +338,7 @@ Show this HELP text.
 
 =head2 PATH
 
-Show the path of the executed C<yt-download>, of the log file and of the configuration file.
+Show the path of the executed C<yt-download>, of the video directory, of the log file and of the configuration file.
 
 =head2 UserAgent
 

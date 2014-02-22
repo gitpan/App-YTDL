@@ -4,22 +4,20 @@ App::YTDL::YTConfig;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use Exporter qw(import);
 our @EXPORT_OK = qw(map_fmt_to_quality read_config_file options);
 
 use File::Basename        qw(basename);
 use File::Spec::Functions qw(catdir catfile);
-use FindBin               qw($RealBin);
+use FindBin               qw($RealBin $RealScript);
 use List::Util            qw(max);
 use Pod::Usage            qw(pod2usage);
 
 use JSON::XS;
-use Term::Size::Any qw(chars);
 use Text::LineFold;
 
-use App::YTDL::GenericFunc qw(encode_fs);
+use App::YTDL::GenericFunc qw(term_size encode_fs);
 
 BEGIN {
     if ( $^O eq 'MSWin32' ) {
@@ -142,14 +140,14 @@ sub options {
             my $log_file    = 'log file';
             my $config_file = 'config file';
             my $path = {
-                $bin         => $RealBin,
+                $bin         => catfile( $RealBin, $RealScript ),
                 $video_dir   => $opt->{youtube_dir},
                 $log_file    => $opt->{log_file},
                 $config_file => $opt->{config_file},
             };
             my $keys = [ $bin, $video_dir, $log_file, $config_file ];
             my $len_key = 13;
-            print_hash( $opt, $path, $keys, $len_key, ( chars )[0] );
+            print_hash( $opt, $path, $keys, $len_key, ( term_size() )[0] );
         }
         elsif ( $choice eq "useragent" ) {
             my $prompt = 'Set the UserAgent';
@@ -297,7 +295,7 @@ sub opt_choose_a_list {
     my $key_new = '    New > ';
     my $l_k     = length $key_cur > length $key_new ? length $key_cur : length $key_new;
     my $lf      = Text::LineFold->new( %{$opt->{line_fold}} );
-    $lf->config( 'ColMax', ( chars )[0] );
+    $lf->config( 'ColMax', ( term_size() )[0] );
     while ( 1 ) {
         my $prompt = $key_cur . join( ', ', @$current ) . "\n";
         $prompt   .= $key_new . join( ', ', @$new )     . "\n\n";

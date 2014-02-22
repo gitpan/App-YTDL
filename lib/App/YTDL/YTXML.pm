@@ -4,7 +4,6 @@ App::YTDL::YTXML;
 use warnings;
 use strict;
 use 5.10.1;
-use utf8;
 
 use Exporter qw(import);
 our @EXPORT_OK = qw(url_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash);
