@@ -5,14 +5,14 @@ use warnings;
 use strict;
 use 5.10.1;
 
-use Exporter qw(import);
-our @EXPORT_OK = qw(url_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash);
+use Exporter qw( import );
+our @EXPORT_OK = qw( url_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash );
 
 use URI;
-use URI::Escape qw(uri_escape);
+use URI::Escape qw( uri_escape );
 use XML::LibXML;
 
-use App::YTDL::GenericFunc qw(sec_to_time insert_sep);
+use App::YTDL::GenericFunc qw( sec_to_time insert_sep );
 
 
 sub get_xml_root {

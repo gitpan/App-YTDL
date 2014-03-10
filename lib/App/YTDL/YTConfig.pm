@@ -5,29 +5,25 @@ use warnings;
 use strict;
 use 5.10.1;
 
-use Exporter qw(import);
-our @EXPORT_OK = qw(map_fmt_to_quality read_config_file options);
+use Exporter qw( import );
+our @EXPORT_OK = qw( map_fmt_to_quality read_config_file options );
 
-use File::Basename        qw(basename);
-use File::Spec::Functions qw(catdir catfile);
-use FindBin               qw($RealBin $RealScript);
-use List::Util            qw(max);
-use Pod::Usage            qw(pod2usage);
+use Encode                qw( encode decode );
+use File::Basename        qw( basename dirname );
+use File::Path            qw( make_path );
+use File::Spec::Functions qw( catdir catfile );
+use File::Temp;
+use FindBin               qw( $RealBin $RealScript );
+use List::Util            qw( max );
+use Pod::Usage            qw( pod2usage );
 
+use Encode::Locale;
 use JSON::XS;
+
 use Text::LineFold;
+use Term::Choose           qw( choose );
 
-use App::YTDL::GenericFunc qw(term_size encode_fs);
-
-BEGIN {
-    if ( $^O eq 'MSWin32' ) {
-        require Term::Choose::Win32;
-        Term::Choose::Win32::->import( 'choose' );
-    } else {
-        require Term::Choose;
-        Term::Choose::->import( 'choose' );
-    }
-}
+use App::YTDL::GenericFunc qw( term_size encode_fs );
 
 
 sub fmts_sorted {
@@ -83,6 +79,7 @@ sub options {
     my $auto_width   = "- Enable auto width";
     my $filename_len = "- Max filename length";
     my $len_kb_sec   = "- Digits 'k/s'";
+    my $yt_video_dir = "- Video directory";
     my %c_hash = (
         $help         => 'show_help_text',
         $show_path    => 'show_path',
@@ -93,9 +90,10 @@ sub options {
         $retries      => 'retries',
         $logging      => 'log_info',
         $info_width   => 'max_info_width',
-        $auto_width    => 'auto_width',
+        $auto_width   => 'auto_width',
         $filename_len => 'max_len_f_name',
         $len_kb_sec   => 'kb_sec_len',
+        $yt_video_dir => 'yt_video_dir',
     );
     my @choices = (
         $help,
@@ -110,6 +108,7 @@ sub options {
         $auto_width,
         $filename_len,
         $len_kb_sec,
+        $yt_video_dir,
     );
     my $continue = '  ' . $opt->{continue};
     my $quit     = '  ' . $opt->{quit};
@@ -135,17 +134,17 @@ sub options {
             pod2usage( { -exitval => 'NOEXIT', -verbose => 2 } );
         }
         elsif ( $choice eq "show_path" ) {
-            my $bin         = 'bin';
-            my $video_dir   = 'video dir';
-            my $log_file    = 'log file';
-            my $config_file = 'config file';
+            my $bin          = 'bin';
+            my $yt_video_dir = 'video dir';
+            my $log_file     = 'log file';
+            my $config_file  = 'config file';
             my $path = {
-                $bin         => catfile( $RealBin, $RealScript ),
-                $video_dir   => $opt->{youtube_dir},
-                $log_file    => $opt->{log_file},
-                $config_file => $opt->{config_file},
+                $bin          => catfile( $RealBin, $RealScript ),
+                $yt_video_dir => $opt->{yt_video_dir},
+                $log_file     => $opt->{log_file},
+                $config_file  => $opt->{config_file},
             };
-            my $keys = [ $bin, $video_dir, $log_file, $config_file ];
+            my $keys = [ $bin, $yt_video_dir, $log_file, $config_file ];
             my $len_key = 13;
             print_hash( $opt, $path, $keys, $len_key, ( term_size() )[0] );
         }
@@ -199,10 +198,90 @@ sub options {
             my $prompt = 'Digits for "k/s" (download speed)';
             opt_number( $opt, $choice, $prompt, $min, $max );
         }
+        elsif ( $choice eq "yt_video_dir" ) {
+            my $prompt = 'Video directory';
+            opt_choose_directory( $opt, $choice, $prompt );
+        }
         else { die $choice }
     }
     return $opt;
 }
+
+sub opt_choose_directory {
+    my( $opt, $choice, $prompt ) = @_;
+    my $new_dir = choose_directory( $opt->{$choice} );
+    return if ! defined $new_dir;
+    if ( $new_dir ne $opt->{$choice} ) {
+        if ( ! eval {
+            my $fh = File::Temp->new( TEMPLATE => 'XXXXXXXXXXXXXXX', UNLINK => 1, DIR => $new_dir );
+            1 }
+        ) {
+            print "$@";
+            choose( [ 'Press Enter:' ], { prompt => '' } );
+        }
+        else {
+            $opt->{$choice} = $new_dir;
+            $opt->{change}++;
+        }
+    }
+}
+
+sub choose_directory {
+    my ( $dir ) = @_;
+    my $curr = $dir;
+    my $previous = $dir;
+    while ( 1 ) {
+        my ( $dh, @dirs );
+        if ( ! eval {
+            opendir( $dh, $dir ) or die $!;
+            1 }
+        ) {
+            print "$@";
+            choose( [ 'Press Enter:' ], { prompt => '' } );
+            $dir = dirname $dir;
+            next;
+        }
+        while ( my $file = readdir $dh ) {
+            next if $file =~ /^\.\.?\z/;
+            push @dirs, decode( 'locale_fs', $file ) if -d catdir $dir, $file;
+        }
+        closedir $dh;
+        my $prompt = 'Current dir: "' . $curr . '"' . "\n";
+        $prompt   .= 'New dir    : "' . $dir  . '"' . "\n\n";
+        my $confirm = '<OK>'; # '.'
+        my $up = '<UP>'; # '..'
+        my $choice = choose(
+            [ undef, $confirm, $up, sort( @dirs ) ],
+            { prompt => $prompt, undef => '<<', default => 0, layout => 1, clear_screen => 1 }
+        );
+        return if ! defined $choice;
+        return $previous if $choice eq $confirm;
+        $choice = encode( 'locale_fs', $choice );
+        $dir = $choice eq $up ? dirname( $dir ) : catdir( $dir, $choice );
+        $previous = $dir;
+    }
+}
+
+
+
+#sub choose_directory {
+#    my ( $opt, $choice, $prompt ) = @_;
+#    $prompt .= ' ['. $opt->{$choice} . ']: ';
+#    print $prompt;
+#    my $new = <STDIN>;
+#    chomp $new;
+#    return if ! $new;
+#    eval { make_path( $new ) };
+#    if ( $@ ) {
+#        say $@;
+#        choose( [ 'Press ENTER' ], { prompt => '' } );
+#        return;
+#    }
+#    else {
+#        $opt->{$choice} = $new;
+#        $opt->{change}++;
+#    }
+#}
 
 
 sub print_hash {

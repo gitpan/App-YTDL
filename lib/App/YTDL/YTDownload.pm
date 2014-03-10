@@ -5,25 +5,21 @@ use warnings;
 use strict;
 use 5.10.1;
 
-use Exporter qw(import);
-our @EXPORT_OK = qw(download_youtube);
+use Exporter qw( import );
+our @EXPORT_OK = qw( download_youtube );
 
-use Fcntl          qw(LOCK_EX SEEK_END);
-use File::Basename qw(basename);
-use Time::HiRes    qw(gettimeofday tv_interval);
+use Fcntl          qw( LOCK_EX SEEK_END );
+use File::Basename qw( basename );
+use Time::HiRes    qw( gettimeofday tv_interval );
 
 use Encode::Locale;
-use Term::ANSIScreen qw(:cursor :screen);
-use Try::Tiny        qw(try catch);
+use Term::ANSIScreen qw( :cursor :screen );
+use Try::Tiny        qw( try catch );
 
-use App::YTDL::YTInfo      qw(get_download_infos get_video_url);
-use App::YTDL::GenericFunc qw(sec_to_time insert_sep encode_fs encode_stdout);
+use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-BEGIN {
-    if ( $^O eq 'MSWin32' ) {
-        require Win32::Console::ANSI;
-    }
-}
+use App::YTDL::YTInfo      qw( get_download_infos get_video_url );
+use App::YTDL::GenericFunc qw( sec_to_time insert_sep encode_fs encode_stdout );
 
 use constant {
     HIDE_CURSOR => "\e[?25l",
@@ -94,6 +90,7 @@ sub download_video {
         elsif ( $p->{size} ) {
             open my $fh, '>>:raw', $file_name_OS or die $!;
             printf p_fmt( $opt, 'start' ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
+            #printf p_fmt( $opt, 'start' ), $video_count, sprintf "@ %.2f M", $p->{size} / 1024 ** 2, $try > 1 ? $retries : '';
             $res = $client->ua->get(
                 $video_url,
                 'Range'       => "bytes=$p->{size}-",

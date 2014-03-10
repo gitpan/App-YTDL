@@ -7,15 +7,10 @@ use ExtUtils::MakeMaker;
 my %prereqs_os_specific;
 if ( $^O eq 'MSWin32' ) {
     %prereqs_os_specific = (
-        'Term::Choose::Win32'  => 0,
         'Win32::Console::ANSI' => 0,
     );
 }
-else {
-    %prereqs_os_specific = (
-        'Term::Choose'         => 0,
-    );
-}
+
 
 WriteMakefile(
     PL_FILES         => {},
@@ -46,6 +41,7 @@ WriteMakefile(
         'File::Basename'         => 0,
         'File::HomeDir'          => 0,
         'File::Spec::Functions'  => 0,
+        'File::Temp'             => 0,
         'FindBin'                => 0,
         'Getopt::Long'           => 0,
         'JSON::XS'               => 0,
@@ -54,6 +50,7 @@ WriteMakefile(
         'LWP::UserAgent'         => 0,
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
+        'Term::Choose'           => '1.100',
         'Term::Size::Any'        => 0,
         'Text::LineFold'         => 0,
         'Time::HiRes'            => 0,

@@ -5,15 +5,11 @@ use warnings;
 use strict;
 use 5.10.1;
 
-use parent qw(LWP::UserAgent);
+use parent qw( LWP::UserAgent );
 
-use App::YTDL::GenericFunc qw(term_size);
+use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-BEGIN {
-    if ( $^O eq 'MSWin32' ) {
-        require Win32::Console::ANSI;
-    }
-}
+use App::YTDL::GenericFunc qw( term_size );
 
 use constant {
     HIDE_CURSOR => "\e[?25l",

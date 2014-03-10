@@ -3,41 +3,31 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.010';
+our $VERSION = '0.011';
 
-use Encode                qw(decode);
-use File::Spec::Functions qw(catdir catfile curdir);
-use Getopt::Long          qw(GetOptions);
-use Pod::Usage            qw(pod2usage);
+use Encode                qw( decode );
+use File::Spec::Functions qw( catdir catfile curdir );
+use Getopt::Long          qw( GetOptions );
+use Pod::Usage            qw( pod2usage );
 
-use Encode::Locale         qw(decode_argv);
-use File::HomeDir          qw(my_videos);
-use List::MoreUtils        qw(any);
+use Encode::Locale         qw( decode_argv );
+use File::HomeDir          qw( my_videos );
+use List::MoreUtils        qw( any );
 use LWP::UserAgent;
-use Term::ANSIScreen       qw(:cursor :screen);
-use Try::Tiny              qw(try catch);
+use Term::ANSIScreen       qw( :cursor :screen );
+use Term::Choose           qw( choose );
+use Try::Tiny              qw( try catch );
 use URI;
-use URI::Escape            qw(uri_unescape);
-use WWW::YouTube::Download qw(video_id playlist_id channel_id);
+use URI::Escape            qw( uri_unescape );
+use WWW::YouTube::Download qw( video_id playlist_id channel_id );
 
-use App::YTDL::YTConfig       qw(read_config_file options);
-use App::YTDL::YTDownload     qw(download_youtube);
-use App::YTDL::YTXML          qw(url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash);
+use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
+
+use App::YTDL::YTConfig       qw( read_config_file options );
+use App::YTDL::YTDownload     qw( download_youtube );
+use App::YTDL::YTXML          qw( url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::LWP_UserAgent;
-use App::YTDL::GenericFunc    qw(encode_fs);
-
-BEGIN {
-    decode_argv(); # not at the end of the BEGIN block if perl < 5.16.0
-    if ( $^O eq 'MSWin32' ) {
-        require Term::Choose::Win32;
-        Term::Choose::Win32::->import( 'choose' );
-        require Win32::Console::ANSI;
-    }
-    else {
-        require Term::Choose;
-        Term::Choose::->import( 'choose' );
-    }
-}
+use App::YTDL::GenericFunc    qw( encode_fs );
 
 binmode STDOUT, ':encoding(console_out)';
 
@@ -45,12 +35,21 @@ my ( $arg_file, $help );
 GetOptions( 'f|file=s@' => \$arg_file, 'h|?|help' => \$help )
 or pod2usage( -message => $!, -verbose => 99, -sections => "SYNOPSIS" );
 
+
 my $my_videos = File::HomeDir->my_videos;
 my $my_data   = File::HomeDir->my_data;
-my $youtube_dir = catdir $my_videos ? $my_videos : curdir,       'YouTube';
-my $config_dir  = catdir $my_data   ? $my_data   : $youtube_dir, 'yt_download';
+my $yt_video_dir = catdir $my_videos ? $my_videos : curdir, 'YouTube';
+my $config_dir;
+if ( $my_data ) {
+    $config_dir = catdir $my_data ? $my_data : $yt_video_dir, 'yt_download';
+}
+else {
+    my $my_home = File::HomeDir->my_home;
+    say "Could not find the Home directory!" and exit if ! $my_home;
+    $config_dir = catdir $my_home, '.yt_download';
+}
 
-mkdir $youtube_dir or die $! if ! -d $youtube_dir;
+#mkdir $yt_video_dir or die $! if ! -d $yt_video_dir;
 mkdir $config_dir  or die $! if ! -d $config_dir;
 
 my $opt = {
@@ -61,7 +60,7 @@ my $opt = {
     confirm        => 'CONFIRM',
     continue       => 'CONTINUE',
     useragent      => 'Mozilla/5.0',
-    youtube_dir    => $youtube_dir,
+    yt_video_dir    => $yt_video_dir,
     config_file    => catfile( $config_dir, 'yt_config.txt' ),
     log_file       => catfile( $config_dir, 'yt_download.log' ),
     log_info       => 1,
@@ -82,6 +81,8 @@ my $opt = {
 
 $opt = read_config_file( $opt, $opt->{config_file} );
 $opt = options( $opt ) if $help;
+
+mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir}; #
 
 my @ids;
 
@@ -288,11 +289,11 @@ __END__
 
 =head1 NAME
 
-C<yt-download> - Download YouTube videos.
+yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.010
+Version 0.011
 
 =cut
 
@@ -329,6 +330,8 @@ To set the different options call C<yt-download -h>.
 
 It is recommended to work with an UTF encoding. Non mappable characters on the output are replaced with C<*>; in file
 names they are replaced with C<&#xNNN;> where NNN is the Unicode code point in a decimal number.
+
+C<App::YTDL> uses the L<WWW::YouTube::Download> module to get the data required for the video download.
 
 =head1 Options
 
@@ -407,6 +410,10 @@ Sets the maximum length of the filename. Filenames longer as the maximum length 
 =head2 Digits for "k/s"
 
 Sets the number of digits allocated for the "kilobyte per seconds" output.
+
+=head2 Video directory
+
+Experimental: choose an alternative YouTube video directory.
 
 =head1 AUTHOR
 

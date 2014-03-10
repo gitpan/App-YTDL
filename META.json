@@ -39,6 +39,7 @@
             "File::Basename" : "0",
             "File::HomeDir" : "0",
             "File::Spec::Functions" : "0",
+            "File::Temp" : "0",
             "FindBin" : "0",
             "Getopt::Long" : "0",
             "JSON::XS" : "0",
@@ -47,7 +48,7 @@
             "List::Util" : "0",
             "Pod::Usage" : "0",
             "Term::ANSIScreen" : "0",
-            "Term::Choose" : "0",
+            "Term::Choose" : "1.100",
             "Term::Size::Any" : "0",
             "Text::LineFold" : "0",
             "Time::HiRes" : "0",
@@ -70,5 +71,5 @@
          "web" : "https://github.com/kuerbis/App-YTDL"
       }
    },
-   "version" : "0.010"
+   "version" : "0.011"
 }

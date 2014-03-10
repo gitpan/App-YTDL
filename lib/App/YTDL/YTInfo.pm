@@ -5,36 +5,28 @@ use warnings;
 use strict;
 use 5.10.1;
 
-use Exporter qw(import);
-our @EXPORT_OK = qw(get_download_infos get_video_url);
+use Exporter qw( import );
+our @EXPORT_OK = qw( get_download_infos get_video_url );
 
-use Encode                qw(decode_utf8);
-use File::Spec::Functions qw(catfile);
-use List::Util            qw(max);
+use Encode                qw( decode_utf8 );
+use File::Spec::Functions qw( catfile );
+use List::Util            qw( max );
 
 use Encode::Locale;
-use List::MoreUtils    qw(any);
-use Term::ANSIScreen   qw(:cursor :screen);
+use List::MoreUtils    qw( any );
+use Term::ANSIScreen   qw( :cursor :screen );
+use Term::Choose       qw( choose );
 use Text::LineFold;
-use Try::Tiny          qw(try catch);
+use Try::Tiny          qw( try catch );
 use Unicode::GCString;
 use URI;
-use URI::Escape        qw(uri_unescape);
+use URI::Escape        qw( uri_unescape );
 
-use App::YTDL::YTConfig    qw(map_fmt_to_quality);
-use App::YTDL::YTXML       qw(url_to_entry_node entry_node_to_info_hash);
-use App::YTDL::GenericFunc qw(term_size unicode_trim encode_stdout_lax);
+use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-BEGIN {
-    if ( $^O eq 'MSWin32' ) {
-        require Term::Choose::Win32;
-        Term::Choose::Win32::->import( 'choose' );
-        require Win32::Console::ANSI;
-    } else {
-        require Term::Choose;
-        Term::Choose::->import( 'choose' );
-    }
-}
+use App::YTDL::YTConfig    qw( map_fmt_to_quality );
+use App::YTDL::YTXML       qw( url_to_entry_node entry_node_to_info_hash );
+use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
 
 use constant {
     QUIT   => -1,
@@ -49,7 +41,7 @@ sub get_download_infos {
     my ( $cols, $rows ) = term_size();
     print "\n\n\n", '=' x $cols, "\n\n", "\n" x $rows;
     print locate( 1, 1 ), cldown;
-    say 'Dir  : ', $opt->{youtube_dir};
+    say 'Dir  : ', $opt->{yt_video_dir};
     say 'Agent: ', $client->ua->agent() || 'unknown';
     print "\n";
     my @video_ids = sort {
@@ -107,7 +99,7 @@ sub get_download_infos {
             }
             else {
                 $info->{$video_id}{video_url} = decode_utf8( $data->{video_url_map}{$fmt}{url} );
-                $info->{$video_id}{file_name} = catfile( $opt->{youtube_dir}, get_filename( $opt, $data, $fmt ) );
+                $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, get_filename( $opt, $data, $fmt ) );
                 $info->{$video_id}{count}     = ++$count;
                 $info->{$video_id}{fmt}       = $fmt;
                 $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
