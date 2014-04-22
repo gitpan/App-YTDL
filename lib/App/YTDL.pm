@@ -2,9 +2,9 @@ package App::YTDL;
 
 use warnings;
 use strict;
-use 5.10.1;
+use 5.010001;
 
-our $VERSION = '0.011';
+our $VERSION = '0.012';
 
 
 1;
@@ -18,11 +18,11 @@ __END__
 
 =head1 NAME
 
-App::YTDL - Download YouTube videos.
+App::YTDL - Download YouTube videos - out of order.
 
 =head1 VERSION
 
-Version 0.011
+Version 0.012
 
 =cut
 
@@ -39,6 +39,8 @@ Version 0.011
 Channel ids need a C<c#> prefix, playlist ids a C<p#> prefix.
 
 =head1 DESCRIPTION
+
+Temporarily out of order.
 
 Download single YouTube videos or/and choose videos from playlists or/and channels.
 

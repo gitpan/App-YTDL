@@ -3,7 +3,7 @@ App::YTDL::LWP_UserAgent;
 
 use warnings;
 use strict;
-use 5.10.1;
+use 5.010001;
 
 use parent qw( LWP::UserAgent );
 

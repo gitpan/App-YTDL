@@ -50,8 +50,8 @@ WriteMakefile(
         'LWP::UserAgent'         => 0,
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
-        'Term::Choose'           => '1.100',
-        'Term::Size::Any'        => 0,
+        'Term::Choose'           => '1.105',
+        'Term::Choose::Util'     => '0.001',
         'Text::LineFold'         => 0,
         'Time::HiRes'            => 0,
         'Try::Tiny'              => 0,
@@ -62,6 +62,12 @@ WriteMakefile(
         'WWW::YouTube::Download' => 0,
         'XML::LibXML'            => 0,
         %prereqs_os_specific,
+    },
+    dist  => {
+        COMPRESS => 'gzip',
+        SUFFIX   => '.gz',
+        TAR      => 'tar',
+        TARFLAGS => '--format=gnu -cvf',
     },
     clean => {
         FILES => 'App-YTDL-*',

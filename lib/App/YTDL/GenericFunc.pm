@@ -3,26 +3,18 @@ App::YTDL::GenericFunc;
 
 use warnings;
 use strict;
-use 5.10.1;
+use 5.010001;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( term_size sec_to_time insert_sep unicode_trim encode_fs encode_stdout_lax encode_stdout );
+our @EXPORT_OK = qw( term_size sec_to_time insert_sep unicode_trim choose_a_directory
+                     print_hash util_readline encode_fs encode_stdout_lax encode_stdout );
 
 use Encode             qw( encode );
 use Unicode::Normalize qw( NFC );
 
 use Encode::Locale;
-use Term::Size::Any    qw( chars );
-use Unicode::GCString;
+use Term::Choose::Util qw( util_readline print_hash choose_a_directory term_size insert_sep unicode_trim );
 
-
-sub term_size {
-    my ( $handle_out ) = @_;
-    $handle_out //= \*STDOUT;
-    my ( $width, $height ) = chars( $handle_out );
-    return $width - 1, $height if $^O eq 'MSWin32';
-    return $width, $height;
-}
 
 sub encode_fs {
     my ( $filename ) = @_;
@@ -67,33 +59,6 @@ sub sec_to_time {
     else {
         return sprintf( "0:%02d", $seconds );
     }
-}
-
-
-sub insert_sep {
-    my ( $number ) = @_;
-    $number =~ s/(\d)(?=(?:\d{3})+\b)/$1,/g;
-    return $number;
-}
-
-
-sub unicode_trim {
-    my ( $unicode, $len ) = @_;
-    return '' if $len <= 0;
-    my $gcs = Unicode::GCString->new( $unicode );
-    my $pos = $gcs->pos;
-    $gcs->pos( 0 );
-    my $cols = 0;
-    my $gc;
-    while ( defined( $gc = $gcs->next ) ) {
-        if ( $len < ( $cols += $gc->columns ) ) {
-            my $ret = $gcs->substr( 0, $gcs->pos - 1 );
-            $gcs->pos( $pos );
-            return $ret->as_string;
-        }
-    }
-    $gcs->pos( $pos );
-    return $gcs->as_string;
 }
 
 

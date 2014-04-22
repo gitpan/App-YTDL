@@ -1,6 +1,12 @@
 Revision history for App-YTDL
 
 
+0.012   2014-04-22
+        - Out of order.
+        - Code refactoring.
+        - Use of "Term::Choose::Util".
+        - Update Makefile.PL.
+
 0.011   2014-03-10
         - "Term::Choose" version 1.100 or higher is required.
         - MSWin32 OS: it is required "Term::Choose" instead of "Term::Choose::Win32".

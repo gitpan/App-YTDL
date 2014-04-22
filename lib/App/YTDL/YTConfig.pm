@@ -3,7 +3,7 @@ App::YTDL::YTConfig;
 
 use warnings;
 use strict;
-use 5.10.1;
+use 5.010001;
 
 use Exporter qw( import );
 our @EXPORT_OK = qw( map_fmt_to_quality read_config_file options );
@@ -23,7 +23,7 @@ use JSON::XS;
 use Text::LineFold;
 use Term::Choose           qw( choose );
 
-use App::YTDL::GenericFunc qw( term_size encode_fs );
+use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_directory util_readline );
 
 
 sub fmts_sorted {
@@ -145,8 +145,8 @@ sub options {
                 $config_file  => $opt->{config_file},
             };
             my $keys = [ $bin, $yt_video_dir, $log_file, $config_file ];
-            my $len_key = 13;
-            print_hash( $opt, $path, $keys, $len_key, ( term_size() )[0] );
+            #my $len_key = 13;
+            print_hash( $path, { keys => $keys } );
         }
         elsif ( $choice eq "useragent" ) {
             my $prompt = 'Set the UserAgent';
@@ -200,16 +200,16 @@ sub options {
         }
         elsif ( $choice eq "yt_video_dir" ) {
             my $prompt = 'Video directory';
-            opt_choose_directory( $opt, $choice, $prompt );
+            opt_choose_a_directory( $opt, $choice, $prompt );
         }
         else { die $choice }
     }
     return $opt;
 }
 
-sub opt_choose_directory {
+sub opt_choose_a_directory {
     my( $opt, $choice, $prompt ) = @_;
-    my $new_dir = choose_directory( $opt->{$choice} );
+    my $new_dir = choose_a_directory( $opt->{$choice} );
     return if ! defined $new_dir;
     if ( $new_dir ne $opt->{$choice} ) {
         if ( ! eval {
@@ -226,90 +226,12 @@ sub opt_choose_directory {
     }
 }
 
-sub choose_directory {
-    my ( $dir ) = @_;
-    my $curr = $dir;
-    my $previous = $dir;
-    while ( 1 ) {
-        my ( $dh, @dirs );
-        if ( ! eval {
-            opendir( $dh, $dir ) or die $!;
-            1 }
-        ) {
-            print "$@";
-            choose( [ 'Press Enter:' ], { prompt => '' } );
-            $dir = dirname $dir;
-            next;
-        }
-        while ( my $file = readdir $dh ) {
-            next if $file =~ /^\.\.?\z/;
-            push @dirs, decode( 'locale_fs', $file ) if -d catdir $dir, $file;
-        }
-        closedir $dh;
-        my $prompt = 'Current dir: "' . $curr . '"' . "\n";
-        $prompt   .= 'New dir    : "' . $dir  . '"' . "\n\n";
-        my $confirm = '<OK>'; # '.'
-        my $up = '<UP>'; # '..'
-        my $choice = choose(
-            [ undef, $confirm, $up, sort( @dirs ) ],
-            { prompt => $prompt, undef => '<<', default => 0, layout => 1, clear_screen => 1 }
-        );
-        return if ! defined $choice;
-        return $previous if $choice eq $confirm;
-        $choice = encode( 'locale_fs', $choice );
-        $dir = $choice eq $up ? dirname( $dir ) : catdir( $dir, $choice );
-        $previous = $dir;
-    }
-}
-
-
-
-#sub choose_directory {
-#    my ( $opt, $choice, $prompt ) = @_;
-#    $prompt .= ' ['. $opt->{$choice} . ']: ';
-#    print $prompt;
-#    my $new = <STDIN>;
-#    chomp $new;
-#    return if ! $new;
-#    eval { make_path( $new ) };
-#    if ( $@ ) {
-#        say $@;
-#        choose( [ 'Press ENTER' ], { prompt => '' } );
-#        return;
-#    }
-#    else {
-#        $opt->{$choice} = $new;
-#        $opt->{change}++;
-#    }
-#}
-
-
-sub print_hash {
-    my ( $opt, $hash, $keys, $len_key, $maxcols ) = @_;
-    my $s_tab   = $len_key + length( ' : ' );
-    my $col_max = $maxcols - $s_tab;
-    my $lf      = Text::LineFold->new( %{$opt->{line_fold}} );
-    $lf->config( 'ColMax', $col_max );
-    my @vals = ();
-    for my $key ( @$keys ) {
-        my $pr_key = sprintf "%*.*s : ", $len_key, $len_key, $key;
-        my $text   = $lf->fold( '' , ' ' x $s_tab, $pr_key . $hash->{$key} );
-        $text =~ s/\R+\z//;
-        for my $val ( split /\R+/, $text ) {
-            push @vals, $val;
-        }
-    }
-    choose( [ @vals ], { layout => 3, clear_screen => 1 } );
-}
-
 
 sub local_read_line {
     my ( $opt, $section, $prompt ) = @_;
     my $current = $opt->{$section} // '';
     $prompt .= ' [' . $current . ']: ';
-    print $prompt;
-    my $string = <STDIN>;
-    chomp $string;
+    my $string = util_readline( $prompt );
     $opt->{$section} = $string;
     $opt->{change}++;
     return;
