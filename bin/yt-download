@@ -3,53 +3,51 @@ use warnings;
 use strict;
 use 5.010001;
 
-our $VERSION = '0.012';
+our $VERSION = '0.013';
 
-use Encode                qw( decode );
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
 use Pod::Usage            qw( pod2usage );
 
 use Encode::Locale         qw( decode_argv );
-use File::HomeDir          qw( my_videos );
-use List::MoreUtils        qw( any );
-use LWP::UserAgent;
+use File::HomeDir          qw();
+use LWP::UserAgent         qw();
 use Term::ANSIScreen       qw( :cursor :screen );
 use Term::Choose           qw( choose );
 use Try::Tiny              qw( try catch );
-use URI;
+use URI                    qw();
 use URI::Escape            qw( uri_unescape );
-use WWW::YouTube::Download qw( video_id playlist_id channel_id );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
 use App::YTDL::YTConfig       qw( read_config_file options );
+use App::YTDL::YTData         qw( get_data choose_ids_from_list );
 use App::YTDL::YTDownload     qw( download_youtube );
-use App::YTDL::YTXML          qw( url_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
-use App::YTDL::LWP_UserAgent;
+use App::YTDL::YTXML          qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::GenericFunc    qw( encode_fs );
 
+binmode STDIN,  ':encoding(console_in)';
 binmode STDOUT, ':encoding(console_out)';
+binmode STDERR, ':encoding(console_out)';
 
 my ( $arg_file, $help );
 GetOptions( 'f|file=s@' => \$arg_file, 'h|?|help' => \$help )
 or pod2usage( -message => $!, -verbose => 99, -sections => "SYNOPSIS" );
 
-
 my $my_videos = File::HomeDir->my_videos;
 my $my_data   = File::HomeDir->my_data;
-my $yt_video_dir = catdir $my_videos ? $my_videos : curdir, 'YouTube';
+my $my_home   = File::HomeDir->my_home;
+
+my $yt_video_dir = catdir $my_videos || $my_data || curdir, 'YouTube';
+
 my $config_dir;
 if ( $my_data ) {
-    $config_dir = catdir $my_data ? $my_data : $yt_video_dir, 'yt_download';
+    $config_dir = catdir $my_data, 'yt_download';
 }
 else {
-    my $my_home = File::HomeDir->my_home;
-    say "Could not find the Home directory!" and exit if ! $my_home;
-    $config_dir = catdir $my_home, '.yt_download';
+    $config_dir = catdir $my_home || curdir, '.yt_download';
 }
 
-#mkdir $yt_video_dir or die $! if ! -d $yt_video_dir;
 mkdir $config_dir  or die $! if ! -d $config_dir;
 
 my $opt = {
@@ -68,6 +66,7 @@ my $opt = {
     max_len_f_name => 62,
     yt_api_v       => 2,
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
+    yt_rp          => qr/(?:youtube|youtu\.be|yourepeat|tube\.majestyc)/i,
     kb_sec_len     => 5,
     max_info_width => 120,
     right_margin   => $^O eq 'MSWin32' ? 1 : 2,
@@ -78,14 +77,13 @@ my $opt = {
     preferred      => [ 43 ],
 };
 
-
 $opt = read_config_file( $opt, $opt->{config_file} );
 $opt = options( $opt ) if $help;
-
-mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir}; #
+#If entered a single space, the useragent is set to an empty string.
+#$opt->{useragent} = '' if $opt->{useragent} eq ' ';
+mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir};
 
 my @ids;
-
 for my $file ( @$arg_file ) {
     open my $fh, '<:encoding(utf-8)', encode_fs( $file ) or die $!;
     while ( my $line = <$fh> ) {
@@ -103,100 +101,136 @@ print locate( 1, 1 ), cldown;
 push @ids, @ARGV;
 if ( ! @ids ) {
     print 'Enter url/id: ';
-    my $ids = <>;
+    my $ids = <STDIN>;
     chomp $ids;
     @ids = split /\s+/, $ids;
     print up( 1 ), cldown;
 }
-
 say "No arguments" and exit if ! @ids;
 
 
-my %ua_opt = ( show_progress => 1 );
-$ua_opt{agent} = $opt->{useragent} if $opt->{useragent} ne ' ';
 
-my $client = WWW::YouTube::Download->new();
-
-$client->ua( LWP::UserAgent->new( %ua_opt ) );
-my ( $info ) = parse_arguments( $opt, $client, @ids );
-
-$client->ua( App::YTDL::LWP_UserAgent->new( %ua_opt ) );
-download_youtube( $opt, $info, $client ) if defined $info && %$info;
+my $info = _parse_arguments( $opt, @ids );
+download_youtube( $opt, $info ) if defined $info && %$info;
 
 
-sub parse_arguments {
-    my ( $opt, $client, @ids ) = @_;
+
+sub _parse_arguments {
+    my ( $opt, @ids ) = @_;
     my $info = {};
     my $invalid_char = $opt->{invalid_char};
     my $more = 0;
     for my $id ( @ids ) {
         my $tmp = {};
-        my $info_id  = '';
-        if (    ( $info_id = $id ) =~ s|^([\p{PerlWord}-]{11})\z|$1|
-             || ( $info_id = $client->video_id( $id ) ) ne $id
-        ) {
-            my $video_id = $info_id;
-            $tmp = { $video_id => { type => 'SI', list_id  => 'no' } };
+        if ( my $channel_id = _user_id( $opt, $id, $invalid_char ) ) {
+            $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
+            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
-        elsif (    ( $info_id = $id ) =~ s|^c#([^$invalid_char]+)\z|$1|
-                || ( $info_id = $client->user_id( $id ) ) ne $id
-        ) {
-            my $channel_id = $info_id;
-            $tmp = list_id_to_info_hash( $opt, $client, 'CL', $channel_id );
+        elsif ( my $playlist_id = _playlist_id( $opt, $id, $invalid_char ) ) {
+            $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
+            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
-        elsif (    ( $info_id = $id ) =~ s|^p#(?:[FP]L)?([^$invalid_char]+)\z|$1|
-                || ( $info_id = $client->playlist_id( $id ) ) ne $id
-        ) {
-            my $playlist_id = $info_id;
-            $tmp = list_id_to_info_hash( $opt, $client, 'PL', $playlist_id );
+        elsif ( my $more_ids = _more_ids( $opt, $id, $invalid_char ) ) {
+            $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
+            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
-        elsif ( uri_unescape( $id ) =~ m|youtu\.?be.*video_ids=([^$invalid_char]+(?:,[^$invalid_char]+)*)| ) {
-            my $more_ids = $1;
-            $tmp = more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
+        elsif ( my $video_id = _video_id( $opt, $id, $invalid_char )  ) {
+            $info = { $video_id => { type => 'SI', list_id => 'no', youtube => 1 } };
         }
         else {
-            pod2usage( -message => "Invalid argument: '$id'\n", -verbose => 99, -sections => "SYNOPSIS" );
+            $info = get_data( $opt, $info, $id );
         }
-        if ( keys %$tmp > 1 ) {
-            $tmp = choose_from_list( $opt, $tmp );
-            next if ! defined $tmp;
-        }
-        %$info = ( %$info, %$tmp );
     }
     return $info;
 }
 
 
-sub choose_from_list {
-    my ( $opt, $info ) = @_;
-    my @video_list;
-    my @pl = grep { $_ ne $opt->{back} }
-             sort {    $info->{$a}{published} cmp $info->{$b}{published}
-                    || $info->{$a}{title}     cmp $info->{$b}{title} }
-             keys %{$info};
-    for my $key ( @pl, $opt->{back} ) {
-        ( my $title = $info->{$key}{title} ) =~ s/\s+/ /g;
-        $title =~ s/^\s+|\s+\z//g;
-        push @video_list, sprintf "%11s | %7s  %10s  %s", $key, $info->{$key}{duration},
-                                                          $info->{$key}{published}, $title;
+sub _video_id {
+    my ( $opt, $id, $invalid_char ) = @_;
+    if ( ! $id ) {
+        return;
     }
-    my @chosen = choose(
-        [ @video_list ],
-        { prompt => 'Your choice: ', layout => 3, clear_screen => 1, no_spacebar => [ $#video_list ] }
-    );
-    return if ! @chosen || $chosen[0] eq $video_list[$#video_list];
-    my $temp_hash;
-    for my $item ( @chosen ) {
-        my $key = ( split /\s+\|\s+/, $item )[0];
-        $temp_hash->{$key} = $info->{$key};
+    if ( $id =~ m{^[\p{PerlWord}-]{11}\z} ) {
+        return $id;
     }
-    return $temp_hash;
+    if ( $id !~ $opt->{yt_rp} ) {
+        return;
+    }
+    elsif ( $id =~ m{/.*?[?&;!](?:v|video_id)=([^$invalid_char]+)} ) {
+        return $1;
+    }
+    elsif ( $id =~ m{/(?:e|v|embed)/([^$invalid_char]+)} ) {
+        return $1;
+    }
+    elsif ( $id =~ m{#p/(?:u|search)/\d+/([^&?/]+)} ) {
+        return $1;
+    }
+    elsif ( $id =~ m{youtu.be/([^$invalid_char]+)} ) {
+        return $1;
+    }
+    return;
+}
+
+sub _playlist_id {
+    my ( $opt, $id, $invalid_char ) = @_;
+    if ( ! $id )                                        {
+        return;
+    }
+    if ( $id =~ m{^p#(?:[FP]L)?([^$invalid_char]+)\z} ) {
+        return $1;
+    }
+    if ( $id !~ $opt->{yt_rp} ) {
+        return;
+    }
+    elsif ( $id =~ m{/.*?[?&;!]list=([^$invalid_char]+)} ) {
+        return $1;
+    }
+    elsif ( $id =~ m{^\s*([FP]L[\w\-]+)\s*\z} ) {
+        return $1;
+    }
+    return;
+}
+
+sub _user_id {
+    my ( $opt, $id, $invalid_char ) = @_;
+    if ( ! $id ) {
+        return;
+    }
+    if ( $id =~ m{^c#([^$invalid_char]+)\z} ) {
+        return $1;
+    }
+    if ( $id !~ $opt->{yt_rp} ) {
+        return;
+    }
+    elsif ( $id =~ m{/user/([^$invalid_char]+)} ) {
+        return $1;
+    }
+    elsif ( $id =~ m{/channel/([^$invalid_char]+)} ) { # ?
+        return $1;
+    }
+    return;
+}
+
+sub _more_ids {
+    my ( $opt, $id, $invalid_char ) = @_;
+    if ( ! $id ) {
+        return;
+    }
+    elsif ( $id !~ $opt->{yt_rp} ) {
+        return;
+    }
+    elsif ( uri_unescape( $id ) =~ m{youtu\.?be.*video_ids=([^$invalid_char]+(?:,[^$invalid_char]+)*)} ) {
+        return $1;
+    }
+    return;
 }
 
 
-sub list_id_to_info_hash {
-    my( $opt, $client, $type, $list_id ) = @_;
+sub _list_id_to_info_hash {
+    my( $opt, $type, $list_id ) = @_;
     my $info = {};
+    printf "Fetching %s info ... \n", $type eq 'PL' ? 'playlist' : 'channel';
+    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     my $url = URI->new( $type eq 'PL'
         ? 'http://gdata.youtube.com/feeds/api/playlists/' . $list_id
         : 'http://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
@@ -208,9 +242,12 @@ sub list_id_to_info_hash {
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
         try {
-            my @e_nodes = url_to_entry_node( $opt, $client, $url->as_string );
+            my $res = $ua->get( $url->as_string );
+            die $res->status_line, ': ', $url if ! $res->is_success;
+            my $xml = $res->decoded_content;
+            my @e_nodes = xml_to_entry_node( $opt, $xml );
             $count_e_nodes = @e_nodes;
-            $info = entry_nodes_to_info_hash( $opt, $info, $client, \@e_nodes, $type, $list_id );
+            $info = _entry_nodes_to_info_hash( $opt, $info, \@e_nodes, $type, $list_id );
         }
         catch {
             my $prompt = "$type : $list_id - $_";
@@ -224,7 +261,7 @@ sub list_id_to_info_hash {
     }
     else {
         $info->{$opt->{back}} = {
-            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00',
+            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00', #
             view_count => 0, content => '', type => $opt->{back}, published => '0000-00-00' };
     }
     my $up = keys %$info;
@@ -233,11 +270,11 @@ sub list_id_to_info_hash {
 }
 
 
-sub entry_nodes_to_info_hash {
-    my ( $opt, $info, $client, $e_nodes, $type, $list_id ) = @_;
+sub _entry_nodes_to_info_hash {
+    my ( $opt, $info, $e_nodes, $type, $list_id ) = @_;
     if ( $type eq 'PL' ) {
         my @video_ids = entry_nodes_to_video_ids( $e_nodes );
-        $info = video_ids_to_info_hash( $opt, $info, \@video_ids, $type, $list_id );
+        $info = _video_ids_to_info_hash( $opt, $info, \@video_ids, $type, $list_id );
     }
     else {
         for my $e_node ( @$e_nodes ) {
@@ -248,25 +285,29 @@ sub entry_nodes_to_info_hash {
 }
 
 
-sub video_ids_to_info_hash {
+sub _video_ids_to_info_hash {
     my ( $opt, $info, $video_ids, $type, $list_id ) = @_;
+    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     for my $video_id ( @$video_ids ) {
         my $url = URI->new( 'http://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
-        my $e_node = url_to_entry_node( $opt, $client, $url->as_string );
+        my $res = $ua->get( $url );
+        die $res->status_line, ': ', $url if ! $res->is_success;
+        my $xml = $res->decoded_content;
+        my $e_node = xml_to_entry_node( $opt, $xml );
         $info = entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
     }
     return $info;
 }
 
 
-sub more_url_to_info_hash {
+sub _more_url_to_info_hash {
     my ( $opt, $more, $type, $more_ids ) = @_;
     my $info = {};
     my @video_ids = split /,/, $more_ids;
     my $list_id = 'mr_' . $more;
     try {
-        $info = video_ids_to_info_hash( $opt, $info, \@video_ids,  $type, $list_id );
+        $info = _video_ids_to_info_hash( $opt, $info, \@video_ids,  $type, $list_id );
     }
     catch {
         my $prompt = "$type : $list_id - $_";
@@ -274,7 +315,7 @@ sub more_url_to_info_hash {
     };
     if ( keys %$info ) {
         $info->{$opt->{back}} = {
-            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00',
+            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00', #
             view_count => 0, content => '', type => $opt->{back}, published => '0000-00-00' };
     }
     return $info;
@@ -289,11 +330,11 @@ __END__
 
 =head1 NAME
 
-yt-download - Download YouTube videos - out of order.
+yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.012
+Version 0.013
 
 =cut
 
@@ -320,8 +361,6 @@ separated.
 
 =head1 DESCRIPTION
 
-Temporarily out of order.
-
 Download single YouTube videos or/and choose videos from playlists or/and channels.
 
 Before the download the script shows some video info and lets you choose the video quality from the available qualities.
@@ -330,36 +369,37 @@ Instead of choosing the quality manually it is possible to set and use preferred
 
 To set the different options call C<yt-download -h>.
 
-It is recommended to work with an UTF encoding. Non mappable characters on the output are replaced with C<*>; in file
-names they are replaced with C<&#xNNN;> where NNN is the Unicode code point in a decimal number.
+C<App::YTDL> uses the L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
 
-C<App::YTDL> uses the L<WWW::YouTube::Download> module to get the data required for the video download.
+If L<Term::Twiddle> is available, C<yt-download> shows some feedback while C<youtube-dl> is fetching the required data.
+
+=head3 Legacy encodings
+
+Non mappable characters on the output are replaced with C<*>. In file names they are replaced with C<&#xNNN;> where NNN
+is the Unicode code point in a decimal number.
 
 =head1 Options
 
 =head2 HELP
 
-Show this HELP text.
+Shows this HELP text.
 
 =head2 PATH
 
-Show the path of the executed C<yt-download>, of the video directory, of the log file and of the configuration file.
+Shows the version and the path of the running C<yt-download> and the path of the video directory, of the log file and of
+the configuration file.
 
 =head2 UserAgent
 
-Set the useragent.
+Sets the useragent.
 
 If entered nothing the default useragent (Mozilla/5.0) is used.
 
-If entered C<""> the useragent is set to an empty string.
-
-If entered a single space, the default L<LWP::UserAgent> is used.
-
 =head2 Overwrite
 
-If enabled existing files are overwritten.
+If I<Overwrite> is enabled, existing files are overwritten.
 
-I not enabled C<yt-download> appends to partially downloaded file with the same name.
+If not enabled C<yt-download> appends to partially downloaded file with the same name.
 
 =head2 Set auto quality
 
@@ -411,22 +451,40 @@ Sets the maximum length of the filename. Filenames longer as the maximum length 
 
 =head2 Digits for "k/s"
 
-Sets the number of digits allocated for the "kilobyte per seconds" output.
+Sets the number of digits allocated for the "kilobyte per seconds" template.
 
 =head2 Video directory
 
-Experimental: choose an alternative YouTube video directory.
+Choose an alternative YouTube video directory.
+
+=head1 REQUIREMENTS
+
+=head2 Perl version
+
+Requires Perl version 5.10.1 or greater.
+
+=head2 youtube-dl
+
+L<youtube-dl|http://rg3.github.io/youtube-dl/> is required.
+
+=head2 Encoding layer
+
+For a correct output it is required an appropriate encoding layer for STDOUT matching the terminal's character set.
+
+=head2 Monospaced font
+
+It is required a terminal that uses a monospaced font which supports the printed characters.
+
+=head1 CREDITS
+
+C<App::YTDL> uses the L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
+
+Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
+L<stackoverflow|http://stackoverflow.com> for the help.
 
 =head1 AUTHOR
 
 Kuerbis <cuer2s@gmail.com>
-
-=head1 CREDITS
-
-Essential parts of this application are using methods of the L<WWW::YouTube::Download> module.
-
-Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
-L<stackoverflow|http://stackoverflow.com> for the help.
 
 =head1 LICENSE AND COPYRIGHT
 

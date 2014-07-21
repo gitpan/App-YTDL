@@ -1,11 +1,15 @@
 Revision history for App-YTDL
 
 
-0.012   2014-04-22
-        - Out of order.
+0.013   2014-07-21
+        - "App::YTDL" uses now "youtube-dl" the get the data required for the video download.
         - Code refactoring.
-        - Use of "Term::Choose::Util".
         - Update Makefile.PL.
+        - Update documentation.
+
+0.012   2014-04-22
+        - Code refactoring.
+        - Out of order.
 
 0.011   2014-03-10
         - "Term::Choose" version 1.100 or higher is required.

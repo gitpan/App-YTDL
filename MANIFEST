@@ -2,8 +2,8 @@ bin/yt-download
 Changes
 lib/App/YTDL.pm
 lib/App/YTDL/GenericFunc.pm
-lib/App/YTDL/LWP_UserAgent.pm
 lib/App/YTDL/YTConfig.pm
+lib/App/YTDL/YTData.pm
 lib/App/YTDL/YTDownload.pm
 lib/App/YTDL/YTInfo.pm
 lib/App/YTDL/YTXML.pm

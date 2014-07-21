@@ -6,27 +6,16 @@ use strict;
 use 5.010001;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( url_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash );
+our @EXPORT_OK = qw( xml_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash );
 
-use URI;
+use URI         qw();
 use URI::Escape qw( uri_escape );
-use XML::LibXML;
+use XML::LibXML qw();
 
 use App::YTDL::GenericFunc qw( sec_to_time insert_sep );
 
 
-sub get_xml_root {
-    my ( $opt, $client, $url ) = @_;
-    my $res = $client->ua->get( $url );
-    die $res->status_line, ': ', $url if ! $res->is_success;
-    my $xml = $res->decoded_content;
-    my $doc = XML::LibXML->load_xml( string => $xml );
-    my $root = $doc->documentElement();
-    return $root;
-}
-
-
-sub xml_node_to_xpc {
+sub _xml_node_to_xpc {
     my ( $node ) = @_;
     my $xpc = XML::LibXML::XPathContext->new( $node );
     $xpc->registerNs( 'xmlns', 'http://www.w3.org/2005/Atom' );
@@ -37,10 +26,12 @@ sub xml_node_to_xpc {
 }
 
 
-sub url_to_entry_node {
-    my ( $opt, $client, $url ) = @_;
-    my $root = get_xml_root( $opt, $client, $url );
-    my $xpc = xml_node_to_xpc( $root );
+
+sub xml_to_entry_node {
+    my ( $opt, $xml ) = @_;
+    my $doc = XML::LibXML->load_xml( string => $xml );
+    my $root = $doc->documentElement();
+    my $xpc = _xml_node_to_xpc( $root );
     if ( $xpc->exists( '/xmlns:feed/xmlns:entry' ) ) {
         my @nodes = $xpc->findnodes( '/xmlns:feed/xmlns:entry' ) if $xpc->exists( '/xmlns:feed/xmlns:entry' );
         return @nodes if @nodes;
@@ -57,7 +48,7 @@ sub entry_nodes_to_video_ids {
     my ( $entry_nodes ) = @_;
     my @video_ids;
     for my $entry ( @$entry_nodes ) {
-        my $xpc = xml_node_to_xpc( $entry );
+        my $xpc = _xml_node_to_xpc( $entry );
         my @nodes = $xpc->findnodes( './media:group/media:player[@url]' );
         for my $node ( @nodes ) {
             my $url = URI->new( $node->getAttribute( 'url' ) );
@@ -73,7 +64,7 @@ sub entry_node_to_info_hash {
     my ( $opt, $info, $entry, $type, $list_id ) = @_;
     die '$entry node not defined!' if ! defined $entry;
     die 'empty $entry node!'       if ! $entry;
-    my $xpc = xml_node_to_xpc( $entry );
+    my $xpc = _xml_node_to_xpc( $entry );
     my $uri = URI->new( $xpc->findvalue( './media:group/media:player/@url' ) );
     my %params = $uri->query_form;
     my $video_id = uri_escape( $params{v} );
@@ -97,7 +88,7 @@ sub entry_node_to_info_hash {
         content         => $content,
         description     => $description,
         keywords        => $keywords,
-        length_seconds  => $seconds,
+        duration_raw    => $seconds,
         published_raw   => $published,
         raters          => $num_raters, # num_raters
         title           => $title,
@@ -105,27 +96,31 @@ sub entry_node_to_info_hash {
         updated         => $updated,
         video_id        => $video_id,
         view_count      => $view_count,
+        youtube         => 1,
     };
-    $info = prepare_info_hash( $opt, $info, $video_id, $type, $list_id );
+    $info = _prepare_info_hash( $opt, $info, $video_id, $type, $list_id );
     return $info;
 }
 
 
-sub prepare_info_hash {
+sub _prepare_info_hash {
     my ( $opt, $info, $video_id, $type, $list_id ) = @_;
-    if ( $type =~ /^(?:PL|CL|MR)\z/ ) { # ?
+    if ( $type eq 'PL' ) {
+        $info->{$video_id}{list_id} = $list_id;
+        $info->{$video_id}{playlist_id} = $list_id;
+    }
+    elsif ( $type eq 'CL' ) {
         $info->{$video_id}{list_id} = $list_id;
     }
-    if ( ! $info->{$video_id}{length_seconds} || $info->{$video_id}{length_seconds} !~ /^[0-9]+\z/) {
-        $info->{$video_id}{length_seconds} = 86399;
+    if ( ! $info->{$video_id}{duration_raw} || $info->{$video_id}{duration_raw} !~ /^[0-9]+\z/) {
+        $info->{$video_id}{duration_raw} = 86399;
     }
-    $info->{$video_id}{duration} = sec_to_time( $info->{$video_id}{length_seconds}, 1 );
+    $info->{$video_id}{duration} = sec_to_time( $info->{$video_id}{duration_raw}, 1 );
     if ( $info->{$video_id}{published_raw} ) {
         if ( $info->{$video_id}{published_raw} =~ /^(\d\d\d\d-\d\d-\d\d)T/ ) {
             $info->{$video_id}{published} = $1;
         }
         else {
-            warn 'Published: invalid format';
             $info->{$video_id}{published} = '0000-00-00';
         }
     }

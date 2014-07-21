@@ -8,26 +8,23 @@ use 5.010001;
 use Exporter qw( import );
 our @EXPORT_OK = qw( map_fmt_to_quality read_config_file options );
 
-use Encode                qw( encode decode );
-use File::Basename        qw( basename dirname );
-use File::Path            qw( make_path );
-use File::Spec::Functions qw( catdir catfile );
-use File::Temp;
+use File::Spec::Functions qw( catfile );
+use File::Temp            qw();
 use FindBin               qw( $RealBin $RealScript );
 use List::Util            qw( max );
 use Pod::Usage            qw( pod2usage );
 
-use Encode::Locale;
-use JSON::XS;
-
-use Text::LineFold;
-use Term::Choose           qw( choose );
-
-use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_directory util_readline );
+use JSON                 qw();
+use Term::Choose         qw( choose );
+use Term::ReadLine::Tiny qw();
+use Text::LineFold       qw();
 
 
-sub fmts_sorted {
-    return [ 13, 17, 36, 5, 6, 34, 35, 18, 22, 37, 38, 82 .. 85, 43 .. 46, 100 .. 103 ];
+use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
+
+
+sub _fmts_sorted {
+    return [ 13, 17, 36, 5, 6, 34, 35, 18, 22, 37, 38, 82 .. 85, 43 .. 46, 100 .. 102, 139 .. 141, 160, 133 .. 138, 264, 171 .. 172, 242 .. 248, 271 .. 272];
 }
 
 
@@ -37,7 +34,7 @@ sub map_fmt_to_quality {
         17 => ' 176x144  3GP',
         36 => ' 320x240  3GP',
 
-         5 => ' 360x240  FLV',
+         5 => ' 360x240  FLV', # 400
          6 => ' 480x270  FLV',
         34 => ' 640x360  FLV',
         35 => ' 854x480  FLV',
@@ -60,7 +57,35 @@ sub map_fmt_to_quality {
         100 => ' 640x360  WebM_3D',
         101 => ' 854x480  WebM_3D',
         102 => '1280x720  WebM_3D',
-        103 => '1920x1080 WebM_3D',
+
+        139 => 'DASH audio   48  M4A',
+        140 => 'DASH audio  128  M4A',
+        142 => 'DASH audio  256  M4A',
+
+
+        133 => 'DASH video  240  MP4',
+        134 => 'DASH video  360  MP4',
+        135 => 'DASH video  480  MP4',
+        136 => 'DASH video  720  MP4',
+        137 => 'DASH video 1080  MP4',
+        138 => 'DASH video 2160  MP4',
+
+        160 => 'DASH video  144  MP4',
+        264 => 'DASH video 1440  MP4',
+
+        171 => 'DASH audio   48 WebM',
+        172 => 'DASH audio  256 WebM',
+
+        242 => 'DASH video  240 WebM',
+        243 => 'DASH video  360 WebM',
+        244 => 'DASH video  480 WebM',
+        245 => 'DASH video  480 WebM',
+        246 => 'DASH video  480 WebM',
+        247 => 'DASH video  720 WebM',
+        248 => 'DASH video 1080 WebM',
+        271 => 'DASH video 1440 WebM',
+        272 => 'DASH video 2160 WebM',
+
     };
 }
 
@@ -121,11 +146,11 @@ sub options {
             { prompt => "Options:", layout => 3, clear_screen => 1, undef => $quit }
         );
         if ( ! defined $c_key ) {
-            write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
+            _write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
             exit();
         }
         if ( $c_key eq $continue ) {
-            write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
+            _write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
             delete $opt->{change};
             last OPTION;
         }
@@ -134,33 +159,34 @@ sub options {
             pod2usage( { -exitval => 'NOEXIT', -verbose => 2 } );
         }
         elsif ( $choice eq "show_path" ) {
-            my $bin          = 'bin';
-            my $yt_video_dir = 'video dir';
-            my $log_file     = 'log file';
+            my $version      = '  version  ';
+            my $bin          = '    bin    ';
+            my $yt_video_dir = ' video dir ';
+            my $log_file     = ' log file  ';
             my $config_file  = 'config file';
             my $path = {
+                $version      => $main::VERSION,
                 $bin          => catfile( $RealBin, $RealScript ),
                 $yt_video_dir => $opt->{yt_video_dir},
                 $log_file     => $opt->{log_file},
                 $config_file  => $opt->{config_file},
             };
-            my $keys = [ $bin, $yt_video_dir, $log_file, $config_file ];
-            #my $len_key = 13;
-            print_hash( $path, { keys => $keys } );
+            my $keys = [ $version, $bin, $yt_video_dir, $log_file, $config_file ];
+            print_hash( $path, { keys => $keys, preface => ' Close with ENTER' } );
         }
         elsif ( $choice eq "useragent" ) {
-            my $prompt = 'Set the UserAgent';
-            local_read_line( $opt, $choice, $prompt );
+            my $prompt = 'Set the UserAgent: ';
+            _local_read_line( $opt, $choice, $prompt );
             $opt->{useragent} = 'Mozilla/5.0' if $opt->{useragent} eq '';
             $opt->{useragent} = ''            if $opt->{useragent} eq '""';
         }
         elsif ( $choice eq "overwrite" ) {
             my $prompt = 'Overwrite files';
-            opt_yes_no( $opt, $choice, $prompt );
+            _opt_yes_no( $opt, $choice, $prompt );
         }
         elsif ( $choice eq "log_info" ) {
             my $prompt = 'Enable info-logging';
-            opt_yes_no( $opt, $choice, $prompt );
+            _opt_yes_no( $opt, $choice, $prompt );
         }
         elsif ( $choice eq "auto_quality" ) {
             my $list = [
@@ -169,47 +195,47 @@ sub options {
                 'keep choice always if possible',
                 'use preferred qualities'
             ];
-            opt_choose_from_list( $opt, $choice, $list );
+            _opt_choose_from_list( $opt, $choice, $list );
         }
         elsif ( $choice eq "preferred" ) {
-            opt_choose_a_list( $opt, $choice, map_fmt_to_quality(), fmts_sorted() );
+            _opt_choose_a_list( $opt, $choice, map_fmt_to_quality(), _fmts_sorted() );
         }
         elsif ( $choice eq "retries" ) {
-            my ( $min, $max ) = ( 0, 99 );
             my $prompt = 'Download retries';
-            opt_number( $opt, $choice, $prompt, $min, $max );
+            my $digits = 3;
+            _opt_number_range( $opt, $choice, $prompt, 3 )
         }
         elsif ( $choice eq "max_info_width" ) {
-            my ( $min, $max ) = ( 40, 500 );
             my $prompt = 'Maximum Info width';
-            opt_number( $opt, $choice, $prompt, $min, $max );
+            my $digits = 3;
+            _opt_number_range( $opt, $choice, $prompt, 3 )
         }
         elsif ( $choice eq "auto_width" ) {
             my $prompt = 'Enable auto width';
-            opt_yes_no( $opt, $choice, $prompt );
+            _opt_yes_no( $opt, $choice, $prompt );
         }
         elsif ( $choice eq "max_len_f_name" ) {
-            my ( $min, $max ) = ( 12, 300 );
             my $prompt = 'Maximum filename length';
-            opt_number( $opt, $choice, $prompt, $min, $max );
+            my $digits = 3;
+            _opt_number_range( $opt, $choice, $prompt, 3 )
         }
         elsif ( $choice eq "kb_sec_len" ) {
             my ( $min, $max ) = ( 3, 9 );
             my $prompt = 'Digits for "k/s" (download speed)';
-            opt_number( $opt, $choice, $prompt, $min, $max );
+            _opt_number( $opt, $choice, $prompt, $min, $max );
         }
         elsif ( $choice eq "yt_video_dir" ) {
             my $prompt = 'Video directory';
-            opt_choose_a_directory( $opt, $choice, $prompt );
+            _opt_choose_a_directory( $opt, $choice, $prompt );
         }
         else { die $choice }
     }
     return $opt;
 }
 
-sub opt_choose_a_directory {
+sub _opt_choose_a_directory {
     my( $opt, $choice, $prompt ) = @_;
-    my $new_dir = choose_a_directory( $opt->{$choice} );
+    my $new_dir = choose_a_dir( { dir => $opt->{$choice} } );
     return if ! defined $new_dir;
     if ( $new_dir ne $opt->{$choice} ) {
         if ( ! eval {
@@ -227,18 +253,19 @@ sub opt_choose_a_directory {
 }
 
 
-sub local_read_line {
+sub _local_read_line {
     my ( $opt, $section, $prompt ) = @_;
     my $current = $opt->{$section} // '';
-    $prompt .= ' [' . $current . ']: ';
-    my $string = util_readline( $prompt );
+    my $tiny = Term::ReadLine::Tiny->new();
+    # Readline
+    my $string = $tiny->readline( $prompt, { default => $current } );
     $opt->{$section} = $string;
     $opt->{change}++;
     return;
 }
 
 
-sub opt_yes_no {
+sub _opt_yes_no {
     my ( $opt, $section, $prompt ) = @_;
     my ( $yes, $no ) = ( 'YES', 'NO' );
     my $current = $opt->{$section} ? $yes : $no;
@@ -253,7 +280,22 @@ sub opt_yes_no {
     return;
 }
 
-sub opt_number {
+
+sub _opt_number_range {
+    my ( $opt, $section, $prompt, $digits ) = @_;
+    my $current = $opt->{$section};
+    $current = insert_sep( $current ); # $opt->{thsd_sep}
+    # Choose_a_number
+    my $choice = choose_a_number( $digits, { name => $prompt, current => $current } );
+    return if ! defined $choice;
+    $opt->{$section} = $choice eq '--' ? undef : $choice;
+    $opt->{change}++;
+    return;
+}
+
+
+
+sub _opt_number {
     my ( $opt, $section, $prompt, $min, $max ) = @_;
     my $current = $opt->{$section};
     # Choose
@@ -267,7 +309,7 @@ sub opt_number {
     return;
 }
 
-sub opt_choose_from_list {
+sub _opt_choose_from_list {
     my ( $opt, $section, $list ) = @_;
     my @options = ();
     my $len = length( scalar @$list );
@@ -283,10 +325,10 @@ sub opt_choose_from_list {
     return;
 }
 
-sub opt_choose_a_list {
+sub _opt_choose_a_list {
     my ( $opt, $section, $ref, $keys ) = @_;
     my $available = [];
-    my $len_key = max map { length } @$keys;
+    my $len_key = max map length, @$keys;
     for my $key ( @$keys ) {
         push @$available, sprintf "%*d => %s", $len_key, $key, $ref->{$key};
     }
@@ -328,19 +370,19 @@ sub opt_choose_a_list {
     }
 }
 
-sub write_config_file {
+sub _write_config_file {
     my ( $opt, $file, @keys ) = @_;
     my $tmp = {};
     for my $section ( sort @keys ) {
         $tmp->{$section} = $opt->{$section};
     }
-    write_json( $file, $tmp );
+    _write_json( $file, $tmp );
 }
 
 
 sub read_config_file {
     my ( $opt, $file ) = @_;
-    my $tmp = read_json( $file );
+    my $tmp = _read_json( $file );
     for my $section ( keys %$tmp ) {
         $opt->{$section} = $tmp->{$section};
     }
@@ -348,7 +390,7 @@ sub read_config_file {
 }
 
 
-sub write_json {
+sub _write_json {
     my ( $file, $h_ref ) = @_;
     my $json = JSON::XS->new->pretty->encode( $h_ref );
     open my $fh, '>', encode_fs( $file ) or die $!;
@@ -357,9 +399,9 @@ sub write_json {
 }
 
 
-sub read_json {
+sub _read_json {
     my ( $file ) = @_;
-    return {} if ! -f encode_fs( $file);
+    return {} if ! -f encode_fs( $file );
     open my $fh, '<', encode_fs( $file ) or die $!;
     my $json = do { local $/; <$fh> };
     close $fh;

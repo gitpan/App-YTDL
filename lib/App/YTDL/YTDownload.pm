@@ -12,14 +12,16 @@ use Fcntl          qw( LOCK_EX SEEK_END );
 use File::Basename qw( basename );
 use Time::HiRes    qw( gettimeofday tv_interval );
 
-use Encode::Locale;
+use Encode::Locale   qw();
+use LWP::UserAgent   qw();
 use Term::ANSIScreen qw( :cursor :screen );
 use Try::Tiny        qw( try catch );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTInfo      qw( get_download_infos get_video_url );
-use App::YTDL::GenericFunc qw( sec_to_time insert_sep encode_fs encode_stdout );
+use App::YTDL::YTData        qw( get_new_video_url );
+use App::YTDL::YTInfo        qw( get_download_infos );
+use App::YTDL::GenericFunc   qw( sec_to_time insert_sep encode_fs encode_stdout );
 
 use constant {
     HIDE_CURSOR => "\e[?25l",
@@ -30,20 +32,19 @@ END { print SHOW_CURSOR }
 
 
 sub download_youtube {
-    my ( $opt, $info, $client ) = @_;
-    ( $info, my $total_nr ) = get_download_infos( $opt, $info, $client );
+    my ( $opt, $info ) = @_;
+    ( $info, my $total_nr ) = get_download_infos( $opt, $info );
     if ( $total_nr == 0 ) {
         print locate( 1, 1 ), cldown;
         say "No videos";
         return;
     }
+    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 0 );
     for my $video_id ( sort { $info->{$a}{count} <=> $info->{$b}{count} } keys %$info ) {
         try {
             my $file_name_OS = encode_fs( $info->{$video_id}{file_name} );
             unlink $file_name_OS or die $! if -f $file_name_OS && $opt->{overwrite};
-            $client->ua->show_progress( 0 );
-            download_video( $opt, $info, $client, $total_nr, $video_id );
-            $client->ua->show_progress( 1 );
+            _download_video( $opt, $info, $ua, $total_nr, $video_id );
         }
         catch {
             say "$video_id - $_";
@@ -53,8 +54,8 @@ sub download_youtube {
 }
 
 
-sub download_video {
-    my ( $opt, $info, $client, $total_nr, $video_id ) = @_;
+sub _download_video {
+    my ( $opt, $info, $ua, $total_nr, $video_id ) = @_;
     my $nr            = $info->{$video_id}{count};
     my $video_url     = $info->{$video_id}{video_url};
     my $file_name     = $info->{$video_id}{file_name};
@@ -79,22 +80,22 @@ sub download_video {
         my $res;
         if ( ! $p->{size} ) {
             open my $fh, '>:raw', $file_name_OS or die $!;
-            printf p_fmt( $opt, 'start' ), $video_count, $retries, '';
-            log_info( $opt, $info, $video_id ) if $opt->{log_info};
-            $res = $client->ua->get(
+            printf _p_fmt( $opt, 'start' ), $video_count, $retries, '';
+            _log_info( $opt, $info, $video_id ) if $opt->{log_info};
+            $res = $ua->get(
                 $video_url,
-                ':content_cb' => return_callback( $opt, $fh, $p ),
+                ':content_cb' => _return_callback( $opt, $fh, $p ),
             );
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
             open my $fh, '>>:raw', $file_name_OS or die $!;
-            printf p_fmt( $opt, 'start' ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
-            #printf p_fmt( $opt, 'start' ), $video_count, sprintf "@ %.2f M", $p->{size} / 1024 ** 2, $try > 1 ? $retries : '';
-            $res = $client->ua->get(
+            printf _p_fmt( $opt, 'start' ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
+            #printf _p_fmt( $opt, 'start' ), $video_count, sprintf "@ %.2f M", $p->{size} / 1024 ** 2, $try > 1 ? $retries : '';
+            $res = $ua->get(
                 $video_url,
                 'Range'       => "bytes=$p->{size}-",
-                ':content_cb' => return_callback( $opt, $fh, $p ),
+                ':content_cb' => _return_callback( $opt, $fh, $p ),
             );
             close $fh or die $!;
         }
@@ -113,13 +114,13 @@ sub download_video {
                     $part2 .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg} || '--';
                 }
             }
-            printf p_fmt( $opt, 'status' ), $dl_time, $status, $part2;
+            printf _p_fmt( $opt, 'status' ), $dl_time, $status, $part2;
             last TRY if $p->{total} && $p->{total} == $file_size;
             last TRY if $status == 416;
         }
         else {
-            printf p_fmt( $opt, 'status' ), $dl_time, $status, 'Trying to get a new video url ...';
-            my $new_video_url = get_video_url( $opt, $info, $client, $video_id );
+            printf _p_fmt( $opt, 'status' ), $dl_time, $status, 'Trying to get a new video url ...';
+            my $new_video_url = get_new_video_url( $opt, $info, $video_id );
             if ( ! $new_video_url ) {
                 die 'Fetching new video url: failed!';
             }
@@ -137,16 +138,18 @@ sub download_video {
 }
 
 
-sub log_info {
+
+
+
+sub _log_info {
     my ( $opt, $info, $video_id ) = @_;
     my ( $sec, $min, $hour, $mday, $mon, $year ) = localtime;
     my $log_str = sprintf( "%04d-%02d-%02d %02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min )
-        . '>  ' . $video_id
+        . '>  ' . sprintf( "%11s", $info->{$video_id}{youtube} ? $video_id : ( $info->{$video_id}{extractor_key} // '' ) . ' ' . ( $info->{$video_id}{id} // '' ) )
         . ' | ' . ( $info->{$video_id}{channel_id} // '------' )
-        . ' | ' . ( $info->{$video_id}{type} eq 'PL' ? $info->{$video_id}{list_id} : '----------' )
+        . ' | ' . ( $info->{$video_id}{playlist_id} // '----------' )
         . ' | ' . ( $info->{$video_id}{published} // '0000-00-00' )
-        . '   ' . basename( $info->{$video_id}{file_name}
-    );
+        . '   ' . basename( $info->{$video_id}{file_name} );
     open my $log, '>>:encoding(UTF-8)', encode_fs( $opt->{log_file} ) or die $!;
     flock $log, LOCK_EX     or die $!;
     seek  $log, 0, SEEK_END or die $!;
@@ -155,7 +158,7 @@ sub log_info {
 }
 
 
-sub p_fmt {
+sub _p_fmt {
     my ( $opt, $key ) = @_;
     my %hash = (
         start        => "  %s   %s   %s\n",
@@ -169,7 +172,7 @@ sub p_fmt {
 }
 
 
-sub return_callback {
+sub _return_callback {
     my ( $opt, $fh, $p ) = @_;
     my $time = $p->{starttime};
     my ( $inter, $kbs, $chunk_size, $download, $eta ) = ( 0 ) x 5;
@@ -199,11 +202,11 @@ sub return_callback {
             my $percent = ( $received / $p->{total} ) * 100;
             my $unit = length $p->{total} <= 10 ? 'M' : 'G';
             my $prec = 2;
-            $info1 = sprintf p_fmt( $opt, 'info_row1' ),
+            $info1 = sprintf _p_fmt( $opt, 'info_row1' ),
                                 $prec, $p->{total} / 1024 ** $exp->{$unit}, $unit,
                                 'ETA ' . ( $eta || '-:--:--' ),
                                 $p->{kbs_avg} || '--',
-            $info2 = sprintf p_fmt( $opt, 'info_row2' ),
+            $info2 = sprintf _p_fmt( $opt, 'info_row2' ),
                                 $prec, $received / 1024 ** $exp->{$unit}, $unit,
                                 $p->{total} > $thresh ? 2 : 1, $percent,
                                 $kbs || '--';
@@ -211,8 +214,8 @@ sub return_callback {
         else {
             my $unit = length $received <= 10 ? 'M' : 'G';
             my $prec = 2;
-            $info1 = sprintf p_fmt( $opt, 'info_nt_row1' ), 'Could not fetch total file-size!', $p->{kbs_avg} || '--';
-            $info2 = sprintf p_fmt( $opt, 'info_nt_row2' ), $prec, $received / 1024 ** $exp->{$unit}, $unit, $kbs || '--';
+            $info1 = sprintf _p_fmt( $opt, 'info_nt_row1' ), 'Could not fetch total file-size!', $p->{kbs_avg} || '--';
+            $info2 = sprintf _p_fmt( $opt, 'info_nt_row2' ), $prec, $received / 1024 ** $exp->{$unit}, $unit, $kbs || '--';
         }
         print "\r", clline, $info1;
         print "\r", clline, $info2;

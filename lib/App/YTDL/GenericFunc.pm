@@ -6,14 +6,14 @@ use strict;
 use 5.010001;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( term_size sec_to_time insert_sep unicode_trim choose_a_directory
-                     print_hash util_readline encode_fs encode_stdout_lax encode_stdout );
+our @EXPORT_OK = qw( term_size sec_to_time insert_sep unicode_trim choose_a_dir choose_a_number
+                     print_hash encode_fs encode_stdout_lax encode_stdout );
 
 use Encode             qw( encode );
 use Unicode::Normalize qw( NFC );
 
 use Encode::Locale;
-use Term::Choose::Util qw( util_readline print_hash choose_a_directory term_size insert_sep unicode_trim );
+use Term::Choose::Util qw( print_hash choose_a_dir choose_a_number term_size insert_sep unicode_trim );
 
 
 sub encode_fs {

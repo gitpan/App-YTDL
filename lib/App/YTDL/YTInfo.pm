@@ -6,27 +6,28 @@ use strict;
 use 5.010001;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( get_download_infos get_video_url );
+our @EXPORT_OK = qw( get_download_infos );
 
 use Encode                qw( decode_utf8 );
 use File::Spec::Functions qw( catfile );
 use List::Util            qw( max );
 
-use Encode::Locale;
 use List::MoreUtils    qw( any );
+use LWP::UserAgent     qw();
 use Term::ANSIScreen   qw( :cursor :screen );
 use Term::Choose       qw( choose );
-use Text::LineFold;
+use Text::LineFold     qw();
 use Try::Tiny          qw( try catch );
-use Unicode::GCString;
-use URI;
+use Unicode::GCString  qw();
+use URI                qw();
 use URI::Escape        qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTConfig    qw( map_fmt_to_quality );
-use App::YTDL::YTXML       qw( url_to_entry_node entry_node_to_info_hash );
-use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
+use App::YTDL::YTConfig      qw( map_fmt_to_quality );
+use App::YTDL::YTData        qw( get_data );
+use App::YTDL::YTXML         qw( xml_to_entry_node );
+use App::YTDL::GenericFunc   qw( term_size unicode_trim encode_stdout_lax );
 
 use constant {
     QUIT   => -1,
@@ -37,16 +38,17 @@ use constant {
 
 
 sub get_download_infos {
-    my ( $opt, $info, $client ) = @_;
+    my ( $opt, $info ) = @_;
     my ( $cols, $rows ) = term_size();
     print "\n\n\n", '=' x $cols, "\n\n", "\n" x $rows;
     print locate( 1, 1 ), cldown;
     say 'Dir  : ', $opt->{yt_video_dir};
-    say 'Agent: ', $client->ua->agent() || 'unknown';
+    say 'Agent: ', $opt->{useragent} // '';
     print "\n";
     my @video_ids = sort {
-             $info->{$b}{type}                   cmp   $info->{$a}{type}
-        ||   $info->{$a}{list_id}                cmp   $info->{$b}{list_id}
+           ( $info->{$b}{extractor}     // ''  ) cmp ( $info->{$a}{extractor}     // ''  )
+        || ( $info->{$b}{type}          // ''  ) cmp ( $info->{$a}{type}          // ''  )
+        || ( $info->{$a}{list_id}       // ''  ) cmp ( $info->{$b}{list_id}       // ''  )
         || ( $info->{$a}{published_raw} // '0' ) cmp ( $info->{$b}{published_raw} // '0' )
         || ( $info->{$a}{title}         // ''  ) cmp ( $info->{$b}{title}         // ''  )
     } keys %$info;
@@ -58,8 +60,8 @@ sub get_download_infos {
         my $video_id = shift @video_ids;
         my ( $print_array, $key_len, $failed );
         try {
-            ( $info ) = get_print_info( $opt, $info, $client, $video_id );
-            ( $info, $print_array, $key_len ) = format_print_info( $opt, $info, $video_id );
+            $info = _get_print_info( $opt, $info, $video_id ) if $info->{$video_id}{youtube};
+            ( $info, $print_array, $key_len ) = _format_print_info( $opt, $info, $video_id );
             print "\n";
             $opt->{up}++;
             binmode STDOUT, ':pop';
@@ -76,30 +78,37 @@ sub get_download_infos {
             $failed = 1;
         };
         next VIDEO if $failed;
-        my $status = $info->{$video_id}{status};
-        if ( ! defined $status || $status ne 'ok' ) {
-            status_not_ok( $opt, $info, $video_id );
-            next VIDEO;
+        if ( $info->{$video_id}{youtube} ) {
+            my $status = $info->{$video_id}{status};
+            if ( ! defined $status || $status ne 'ok' ) {
+                _status_not_ok( $opt, $info, $video_id );
+                next VIDEO;
+            }
         }
-        try {
-            $opt->{up}++ if ! $client->{cache}{$video_id}; ###
-            my $data = $client->prepare_download( $video_id );
-            ( $info, $fmt ) = choose_quality( $opt, $info, $data, $client, $fmt, $video_id );
+        try { #
+            my $edit;
+            ( $info, $fmt, $edit ) = _choose_quality( $opt, $info, $fmt, $video_id );
             print up( $opt->{up} ), cldown;
             $opt->{up} = 0;
-            if ( $fmt < 0 ) {
-                if ( $fmt == QUIT ) {
+            if ( defined $edit ) {
+                if ( $edit == QUIT ) {
                     print locate( 1, 1 ), cldown;
                     say "Quit";
                     exit;
                 }
-                delete  $info->{$video_id}    if $fmt == DELETE;
-                push    @video_ids, $video_id if $fmt == APPEND;
-                unshift @video_ids, $video_id if $fmt == REDO;
+                if ( $edit == DELETE ) {
+                    delete  $info->{$video_id};
+                    if ( ! @video_ids ) {
+                        print up( 2 ), cldown;
+                        print "\n";
+                    }
+                }
+                push    @video_ids, $video_id if $edit == APPEND;
+                unshift @video_ids, $video_id if $edit == REDO;
             }
             else {
-                $info->{$video_id}{video_url} = decode_utf8( $data->{video_url_map}{$fmt}{url} );
-                $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, get_filename( $opt, $data, $fmt ) );
+                $info->{$video_id}{video_url} = $info->{$video_id}{fmt_to_info}{$fmt}{url};
+                $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, _get_filename( $opt, $info, $fmt, $video_id ) );
                 $info->{$video_id}{count}     = ++$count;
                 $info->{$video_id}{fmt}       = $fmt;
                 $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
@@ -121,7 +130,7 @@ sub get_download_infos {
 }
 
 
-sub status_not_ok {
+sub _status_not_ok {
     my ( $opt, $info, $video_id ) = @_;
     $info->{$video_id}{status} //= 'undefined';
     my @keys    = ( 'title', 'video_id', 'status', 'errorcode', 'reason' );
@@ -148,19 +157,13 @@ sub status_not_ok {
 }
 
 
-sub get_print_info {
-    my ( $opt, $info, $client, $video_id ) = @_;
-    my $type = $info->{$video_id}{type};
-    if ( ! ( $type eq 'PL' ) ) {
-        my $url = URI->new( 'http://gdata.youtube.com/feeds/api/videos/' . $video_id );
-        $url->query_form( 'v' => $opt->{yt_api_v} );
-        my $entry = url_to_entry_node( $opt, $client, $url );
-        $opt->{up}++;
-        $info = entry_node_to_info_hash( $opt, $info, $entry, $type, $info->{$video_id}{list_id} );
-    }
+sub _get_print_info {
+    my ( $opt, $info, $video_id ) = @_;
+    $info = get_data( $opt, $info, $video_id );
+    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     my $info_url = URI->new( 'http://www.youtube.com/get_video_info' );
     $info_url->query_form( 'video_id' => $video_id );
-    my $res = $client->ua->get( $info_url->as_string );
+    my $res = $ua->get( $info_url->as_string );
     die "$res->status_line: $info_url" if ! $res->is_success;
     $opt->{up}++;
     for my $item ( split /&/, $res->decoded_content ) {
@@ -175,10 +178,13 @@ sub get_print_info {
 }
 
 
-sub format_print_info {
+sub _format_print_info {
     my ( $opt, $info, $video_id ) = @_;
-    my @keys = ( qw( title video_id author duration raters avg_rating
-                     view_count published content description keywords ) );
+    my @keys = ( qw( title video_id ) );
+    push @keys, 'extractor' if ! $info->{$video_id}{youtube};
+    push @keys, qw( author duration raters avg_rating view_count published content description keywords );
+    #my $categories = join ', ', @{$info->{$video_id}{categories}};
+    #$info->{$video_id}{keywords} = $categories . ', ' . $info->{$video_id}{keywords} if $categories;
     for my $key ( @keys ) {
         next if ! defined $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\R/ /g;
@@ -249,16 +255,13 @@ sub format_print_info {
 }
 
 
-sub get_filename {
-    my ( $opt, $data, $fmt ) = @_;
-    my $title  = decode_utf8( $data->{title} );
-    my $suffix = decode_utf8( $data->{suffix} );
-    $suffix = 'webm' if $fmt =~ /^(?:43|44|45|46|100|101|102|103)\z/;
-    $suffix = 'flv'  if $fmt =~ /^(?:5|6|34|35)\z/;
-    $suffix = 'mp4'  if $fmt =~ /^(?:18|22|37|38|82|83|84|85)\z/;
-    $suffix = '3gp'  if $fmt =~ /^(?:13|17|36)\z/;
+sub _get_filename {
+    my ( $opt, $info, $fmt, $video_id ) = @_;
+    my $title  = $info->{$video_id}{title};
+    my $suffix = $info->{$video_id}{fmt_to_info}{$fmt}{ext};
     my $gcs_suff = Unicode::GCString->new( $suffix );
-    my $len = $opt->{max_len_f_name} - ( $gcs_suff->columns() + length( $fmt ) + 2 );
+    my $gcs_fmt  = Unicode::GCString->new( $fmt );
+    my $len = $opt->{max_len_f_name} - ( $gcs_suff->columns() + $gcs_fmt->columns() + 2 );
     my $file_name = unicode_trim( $title, $len );
     $file_name = $file_name . '_' . $fmt . '.' . $suffix;
     $file_name =~ s/\s/_/g;
@@ -271,13 +274,13 @@ sub get_filename {
 }
 
 
-sub choose_quality {
-    my ( $opt, $info, $data, $client, $fmt, $video_id ) = @_;
-    my @avail_fmts = map { decode_utf8( $_ ) } @{$data->{fmt_list}};
+sub _choose_quality {
+    my ( $opt, $info, $fmt, $video_id ) = @_;
+    my @avail_fmts = @{$info->{$video_id}{fmt_list}};
     if ( ! @avail_fmts ) {
         my $ref = map_fmt_to_quality;
         for my $fmt ( sort keys %$ref ) {
-            push @avail_fmts, $fmt if $data->{video_url_map}{$fmt}{url};
+            push @avail_fmts, $fmt if $info->{$video_id}{fmt_to_info}{$fmt}{url};
         }
         if ( ! @avail_fmts ) {
             my $prompt = 'video_id ' . $video_id . ': Error in fetching available fmts.' . "\n";
@@ -287,7 +290,8 @@ sub choose_quality {
             return $info, $fmt;
         }
     }
-    my $fmt_ok;
+    my $skip_pq = $opt->{auto_quality} == 3 && ! $info->{$video_id}{youtube} ? 1 : 0;
+    my ( $fmt_ok, $edit );
     if ( $opt->{auto_quality} == 3 ) {
         my @pref_qualities = @{$opt->{preferred}//[]};
         if ( ! @pref_qualities ) {
@@ -312,9 +316,9 @@ sub choose_quality {
             }
         }
     }
-    elsif ( $opt->{auto_quality} == 2 ) {
+    elsif ( $opt->{auto_quality} == 2 || $skip_pq ) {
         if ( ! defined $opt->{aq} ) {
-            $fmt = set_fmt( $opt, $data );
+            ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
             $opt->{aq} = $fmt if $fmt >= 0;
             $fmt_ok = 1;
         }
@@ -327,7 +331,7 @@ sub choose_quality {
         if ( $info->{$video_id}{type} =~ /^[PC]L\z/ ) {
             my $aq = $info->{$video_id}{type} . '#' . $info->{$video_id}{list_id};
             if ( ! defined $opt->{$aq} ) {
-                $fmt = set_fmt( $opt, $data );
+                ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
                 $opt->{$aq} = $fmt if $fmt >= 0;
                 $fmt_ok = 1;
             }
@@ -338,66 +342,59 @@ sub choose_quality {
         }
     }
     if ( ! $fmt_ok ) {
-        $fmt = set_fmt( $opt, $data );
+        ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
     }
-    if ( $fmt >= 0 && ! $data->{video_url_map}{$fmt}{url} ) {
+    if ( ! defined $edit && ! $info->{$video_id}{fmt_to_info}{$fmt}{url} ) {
         my $prompt = 'video_id "' . $video_id . '": fmt ' . $fmt . ' not supported.';
         choose( [ 'Press ENTER to continue' ], { prompt => $prompt } );
-        $fmt = DELETE;
+        $edit = DELETE;
     }
-    return $info, $fmt;
+    return $info, $fmt, $edit;
 }
 
 
-sub set_fmt {
-    my ( $opt, $data ) = @_;
-    my @avail_fmts = map { decode_utf8( $_ ) } @{$data->{fmt_list}};
-    my $ref = map_fmt_to_quality();
-    my $list_res;
-    for my $fmt ( keys %$ref ) {
-        ( my $res = $ref->{$fmt} ) =~ s/\s+/ /g;
-        $res =~ s/^\s+|\s+\z//g;
-        $list_res->{$fmt} = $res // decode_utf8( $data->{video_url_map}{$fmt}{resolution} ) . '_NEW';
+sub _set_fmt {
+    my ( $opt, $info, $video_id ) = @_;
+    my ( @choices, @format_ids );
+    if ( $info->{$video_id}{youtube} ) {
+        for my $fmt ( sort { $a <=> $b } @{$info->{$video_id}{fmt_list}} ) {
+            push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
+            push @format_ids, $fmt;
+        }
     }
-    my $len_res = max map { length } @{$list_res}{@avail_fmts};
-    my $len_fmt = max map { length } @avail_fmts;
-    my @choices;
-    for my $fmt ( sort { $a <=> $b } @avail_fmts ) {
-        push @choices, sprintf "%*d : %-*s", $len_fmt, $fmt, $len_res, $list_res->{$fmt};
+    else {
+        for my $fmt ( sort @{$info->{$video_id}{fmt_list}} ) {
+            push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
+            push @format_ids, $fmt;
+        }
     }
+    my @pre = ( undef );
     print "\n";
     $opt->{up}++;
-    my $fmt_res = choose(
-        [ undef, @choices ],
-        { prompt => 'Your choice: ', order => 0, undef => 'Menu' }
+    my $fmt_res_idx = choose(
+        [ @pre, @choices ],
+        { prompt => 'Your choice: ', index => 1, order => 0, undef => 'Menu' }
     );
     my $fmt;
-    if ( ! defined $fmt_res ) {
+    my $edit;
+    if ( ! $fmt_res_idx ) {
         my ( $delete, $append, $redo ) = ( 'Delete', 'Append', 'Redo' );
         my $choice = choose(
             [ undef, $delete, $append, $redo ],
             { prompt => 'Your choice: ', undef => $opt->{quit} }
         );
-        $fmt = QUIT   if ! defined $choice;
-        $fmt = DELETE if $choice eq $delete;
-        $fmt = APPEND if $choice eq $append;
-        $fmt = REDO   if $choice eq $redo;
+        $edit = QUIT   if ! defined $choice;
+        $edit = DELETE if $choice eq $delete;
+        $edit = APPEND if $choice eq $append;
+        $edit = REDO   if $choice eq $redo;
     }
     else {
-        $fmt = ( split /\s:\s/, $fmt_res )[0];
-        $fmt =~ s/^\s+|\s+\z//g;
+        $fmt_res_idx--;
+        $fmt = $format_ids[$fmt_res_idx];
     }
-    return $fmt;
+    return $fmt, $edit;
 }
 
-
-sub get_video_url {
-    my ( $opt, $info, $client, $video_id ) = @_;
-    delete $client->{cache}{$video_id};             ###
-    my $data = $client->prepare_download( $video_id );
-    my $video_url = decode_utf8( $data->{video_url_map}{$info->{$video_id}{fmt}}{url} );
-    return $video_url;
-}
 
 
 1;
