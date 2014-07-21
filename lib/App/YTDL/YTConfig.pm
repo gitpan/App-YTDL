@@ -193,7 +193,8 @@ sub options {
                 'choose always manually',
                 'keep choice for the respective Playlist/Channel if possible',
                 'keep choice always if possible',
-                'use preferred qualities'
+                'use preferred qualities',
+                'use always default (best) quality',
             ];
             _opt_choose_from_list( $opt, $choice, $list );
         }

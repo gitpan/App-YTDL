@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010001;
 
-our $VERSION = '0.013';
+our $VERSION = '0.014';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -334,7 +334,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.013
+Version 0.014
 
 =cut
 
@@ -371,7 +371,8 @@ To set the different options call C<yt-download -h>.
 
 C<App::YTDL> uses the L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
 
-If L<Term::Twiddle> is available, C<yt-download> shows some feedback while C<youtube-dl> is fetching the required data.
+If L<Term::Twiddle> is available, C<yt-download> shows some feedback while fetching the data required for the video
+download.
 
 =head3 Legacy encodings
 
@@ -421,7 +422,11 @@ mode 2: keep the first chosen quality for all downloads if possible.
 
 =item
 
-mode 3: use preferred qualities
+mode 3: use preferred qualities.
+
+=item
+
+mode 4: use always default (best) quality.
 
 =back
 
@@ -477,7 +482,7 @@ It is required a terminal that uses a monospaced font which supports the printed
 
 =head1 CREDITS
 
-C<App::YTDL> uses the L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
+C<App::YTDL> uses L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
 
 Thanks to the L<Perl-Community.de|http://www.perl-community.de> and the people form
 L<stackoverflow|http://stackoverflow.com> for the help.

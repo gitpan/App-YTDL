@@ -292,7 +292,13 @@ sub _choose_quality {
     }
     my $skip_pq = $opt->{auto_quality} == 3 && ! $info->{$video_id}{youtube} ? 1 : 0;
     my ( $fmt_ok, $edit );
-    if ( $opt->{auto_quality} == 3 ) {
+    if ( $opt->{auto_quality} == 4 ) {
+        if ( defined $info->{$video_id}{default_fmt} ) {
+            $fmt = $info->{$video_id}{default_fmt};
+            $fmt_ok = 1;
+        }
+    }
+    elsif ( $opt->{auto_quality} == 3 ) {
         my @pref_qualities = @{$opt->{preferred}//[]};
         if ( ! @pref_qualities ) {
             print "\n";

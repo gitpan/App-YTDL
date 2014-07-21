@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.014   2014-07-21
+        - "Set auto quality": added an "always default (best)" option.
+        - Update documentation.
+
 0.013   2014-07-21
         - "App::YTDL" uses now "youtube-dl" the get the data required for the video download.
         - Code refactoring.
