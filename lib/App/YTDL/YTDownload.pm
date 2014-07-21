@@ -80,7 +80,7 @@ sub _download_video {
         my $res;
         if ( ! $p->{size} ) {
             open my $fh, '>:raw', $file_name_OS or die $!;
-            printf _p_fmt( $opt, 'start' ), $video_count, $retries, '';
+            printf _p_fmt( $opt, "start" ), $video_count, $retries, '';
             _log_info( $opt, $info, $video_id ) if $opt->{log_info};
             $res = $ua->get(
                 $video_url,
@@ -89,9 +89,9 @@ sub _download_video {
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
+            $retries = '   ' if $try == 1;
             open my $fh, '>>:raw', $file_name_OS or die $!;
-            printf _p_fmt( $opt, 'start' ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
-            #printf _p_fmt( $opt, 'start' ), $video_count, sprintf "@ %.2f M", $p->{size} / 1024 ** 2, $try > 1 ? $retries : '';
+            printf _p_fmt( $opt, "start" ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
             $res = $ua->get(
                 $video_url,
                 'Range'       => "bytes=$p->{size}-",
@@ -103,23 +103,28 @@ sub _download_video {
         my $status = $res->code;
         my $dl_time = sec_to_time( int( tv_interval( [ $p->{starttime} ] ) ), 1 );
         if ( $status =~ /^(200|206|416)/ ) {
-            my $part2 = '';
+            my $size_avg_speed = '';
             my $file_size = -s $file_name_OS // -1;
             if ( $p->{total} ) {
                 if ( $file_size != $p->{total} ) {
-                    $part2 .= sprintf " Incomplete: %s/%s ", insert_sep( $file_size ), insert_sep( $p->{total} );
-                    $part2 .= sprintf "   avg %2sk/s", $p->{kbs_avg} if $p->{kbs_avg};
+                    $size_avg_speed .= sprintf " Incomplete: %s/%s ", insert_sep( $file_size ), insert_sep( $p->{total} );
+                    $size_avg_speed .= sprintf "   avg %2sk/s", $p->{kbs_avg} if $p->{kbs_avg};
                 }
                 elsif ( $status =~ /^20[06]\z/ ) {
-                    $part2 .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg} || '--';
+                    $size_avg_speed .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg} || '--';
                 }
             }
-            printf _p_fmt( $opt, 'status' ), $dl_time, $status, $part2;
+            if ( $status == 200 ) {
+                printf _p_fmt( $opt, "status" ), $dl_time, '', '', $size_avg_speed;
+            }
+            else {
+                printf _p_fmt( $opt, "status" ), $dl_time, 'status', $status, $size_avg_speed;
+            }
             last TRY if $p->{total} && $p->{total} == $file_size;
             last TRY if $status == 416;
         }
         else {
-            printf _p_fmt( $opt, 'status' ), $dl_time, $status, 'Trying to get a new video url ...';
+            printf _p_fmt( $opt, "status" ), $dl_time, 'status', $status, 'Trying to get a new video url ...';
             my $new_video_url = get_new_video_url( $opt, $info, $video_id );
             if ( ! $new_video_url ) {
                 die 'Fetching new video url: failed!';
@@ -136,9 +141,6 @@ sub _download_video {
     print SHOW_CURSOR;
     return;
 }
-
-
-
 
 
 sub _log_info {
@@ -162,7 +164,7 @@ sub _p_fmt {
     my ( $opt, $key ) = @_;
     my %hash = (
         start        => "  %s   %s   %s\n",
-        status       => "  %s  status %s  %s\n",
+        status       => "  %s  %6s %3s  %s\n",
         info_row1    => "%9.*f %s %37s %"    . (      $opt->{kb_sec_len} ) . "sk/s\n",
         info_row2    => "%9.*f %s %6.*f%% %" . ( 30 + $opt->{kb_sec_len} ) . "sk/s\n",
         info_nt_row1 => " %34s %24sk/s\n",
@@ -202,11 +204,11 @@ sub _return_callback {
             my $percent = ( $received / $p->{total} ) * 100;
             my $unit = length $p->{total} <= 10 ? 'M' : 'G';
             my $prec = 2;
-            $info1 = sprintf _p_fmt( $opt, 'info_row1' ),
+            $info1 = sprintf _p_fmt( $opt, "info_row1" ),
                                 $prec, $p->{total} / 1024 ** $exp->{$unit}, $unit,
                                 'ETA ' . ( $eta || '-:--:--' ),
                                 $p->{kbs_avg} || '--',
-            $info2 = sprintf _p_fmt( $opt, 'info_row2' ),
+            $info2 = sprintf _p_fmt( $opt, "info_row2" ),
                                 $prec, $received / 1024 ** $exp->{$unit}, $unit,
                                 $p->{total} > $thresh ? 2 : 1, $percent,
                                 $kbs || '--';
@@ -214,8 +216,8 @@ sub _return_callback {
         else {
             my $unit = length $received <= 10 ? 'M' : 'G';
             my $prec = 2;
-            $info1 = sprintf _p_fmt( $opt, 'info_nt_row1' ), 'Could not fetch total file-size!', $p->{kbs_avg} || '--';
-            $info2 = sprintf _p_fmt( $opt, 'info_nt_row2' ), $prec, $received / 1024 ** $exp->{$unit}, $unit, $kbs || '--';
+            $info1 = sprintf _p_fmt( $opt, "info_nt_row1" ), 'Could not fetch total file-size!', $p->{kbs_avg} || '--';
+            $info2 = sprintf _p_fmt( $opt, "info_nt_row2" ), $prec, $received / 1024 ** $exp->{$unit}, $unit, $kbs || '--';
         }
         print "\r", clline, $info1;
         print "\r", clline, $info2;

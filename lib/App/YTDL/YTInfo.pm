@@ -47,7 +47,6 @@ sub get_download_infos {
     print "\n";
     my @video_ids = sort {
            ( $info->{$b}{extractor}     // ''  ) cmp ( $info->{$a}{extractor}     // ''  )
-        || ( $info->{$b}{type}          // ''  ) cmp ( $info->{$a}{type}          // ''  )
         || ( $info->{$a}{list_id}       // ''  ) cmp ( $info->{$b}{list_id}       // ''  )
         || ( $info->{$a}{published_raw} // '0' ) cmp ( $info->{$b}{published_raw} // '0' )
         || ( $info->{$a}{title}         // ''  ) cmp ( $info->{$b}{title}         // ''  )
@@ -183,8 +182,6 @@ sub _format_print_info {
     my @keys = ( qw( title video_id ) );
     push @keys, 'extractor' if ! $info->{$video_id}{youtube};
     push @keys, qw( author duration raters avg_rating view_count published content description keywords );
-    #my $categories = join ', ', @{$info->{$video_id}{categories}};
-    #$info->{$video_id}{keywords} = $categories . ', ' . $info->{$video_id}{keywords} if $categories;
     for my $key ( @keys ) {
         next if ! defined $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\R/ /g;
@@ -334,12 +331,14 @@ sub _choose_quality {
         }
     }
     elsif ( $opt->{auto_quality} == 1 ) {
-        if ( $info->{$video_id}{type} =~ /^[PC]L\z/ ) {
-            my $aq = $info->{$video_id}{type} . '#' . $info->{$video_id}{list_id};
+        if ( $info->{$video_id}{list_id} ) {
+            my $aq = $info->{$video_id}{list_id};
             if ( ! defined $opt->{$aq} ) {
                 ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
-                $opt->{$aq} = $fmt if $fmt >= 0;
-                $fmt_ok = 1;
+                if ( defined $fmt ) {
+                    $opt->{$aq} = $fmt;
+                    $fmt_ok = 1;
+                }
             }
             elsif ( any{ $_ eq $opt->{$aq} } @avail_fmts ) {
                 $fmt = $opt->{$aq};

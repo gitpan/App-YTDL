@@ -92,12 +92,12 @@ sub entry_node_to_info_hash {
         published_raw   => $published,
         raters          => $num_raters, # num_raters
         title           => $title,
-        type            => $type,
         updated         => $updated,
         video_id        => $video_id,
         view_count      => $view_count,
-        youtube         => 1,
     };
+    $info->{$video_id}{list_id} = $list_id;
+    $info->{$video_id}{youtube} = 1;
     $info = _prepare_info_hash( $opt, $info, $video_id, $type, $list_id );
     return $info;
 }
@@ -106,11 +106,7 @@ sub entry_node_to_info_hash {
 sub _prepare_info_hash {
     my ( $opt, $info, $video_id, $type, $list_id ) = @_;
     if ( $type eq 'PL' ) {
-        $info->{$video_id}{list_id} = $list_id;
         $info->{$video_id}{playlist_id} = $list_id;
-    }
-    elsif ( $type eq 'CL' ) {
-        $info->{$video_id}{list_id} = $list_id;
     }
     if ( ! $info->{$video_id}{duration_raw} || $info->{$video_id}{duration_raw} !~ /^[0-9]+\z/) {
         $info->{$video_id}{duration_raw} = 86399;

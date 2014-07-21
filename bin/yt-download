@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010001;
 
-our $VERSION = '0.014';
+our $VERSION = '0.015';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -121,21 +121,20 @@ sub _parse_arguments {
     my $invalid_char = $opt->{invalid_char};
     my $more = 0;
     for my $id ( @ids ) {
-        my $tmp = {};
         if ( my $channel_id = _user_id( $opt, $id, $invalid_char ) ) {
-            $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
+            my $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
             $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $playlist_id = _playlist_id( $opt, $id, $invalid_char ) ) {
-            $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
+            my $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
             $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $more_ids = _more_ids( $opt, $id, $invalid_char ) ) {
-            $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
+            my $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
             $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $video_id = _video_id( $opt, $id, $invalid_char )  ) {
-            $info = { $video_id => { type => 'SI', list_id => 'no', youtube => 1 } };
+            $info->{$video_id}{youtube} = 1;
         }
         else {
             $info = get_data( $opt, $info, $id );
@@ -334,7 +333,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.014
+Version 0.015
 
 =cut
 

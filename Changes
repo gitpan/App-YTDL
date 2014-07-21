@@ -1,6 +1,9 @@
 Revision history for App-YTDL
 
 
+0.015   2014-07-21
+        - Bugfixes and updates.
+
 0.014   2014-07-21
         - "Set auto quality": added an "always default (best)" option.
         - Update documentation.

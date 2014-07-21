@@ -71,12 +71,18 @@ sub get_data {
         print $message . "done.\n";
     }
     $opt->{up}++;
+
     my @json = split /\n+/, $capture;
-    my $ids;
     my $is_list = @json > 1 ? 1 : 0;
+    my $list_id;
     if ( $is_list ) {
         delete $info->{$video_id};
+        $list_id = 'OT_' . $video_id;
     }
+    else {
+        $list_id = $info->{$video_id}{list_id};
+    }
+    my $ids;
     my $tmp = {};
     for my $json ( @json ) {
         my $h_ref = decode_json( $json );
@@ -92,12 +98,12 @@ sub get_data {
             $formats->{$format_id}{width}       = $format->{width};
             $formats->{$format_id}{url}         = $format->{url};
         }
+        my $type;
         if ( $is_list ) {
-            $video_id = $h_ref->{id};
+            $video_id = $h_ref->{id} // $h_ref->{title};
         }
         push @$ids, $video_id;
         $tmp->{$video_id} = {
-            #is_list         => $is_list,
             video_id        => $video_id,
             id              => $h_ref->{id},
             #age_limit       => $h_ref->{age_limit},
@@ -119,17 +125,17 @@ sub get_data {
             #stitle          => $h_ref->{stitle},
             title           => $h_ref->{title},
             view_count      => $h_ref->{view_count},
-
-            fmt_to_info      => $formats,
-            fmt_list         => $fmt_list,
         };
+        $tmp->{$video_id}{fmt_to_info} = $formats;
+        $tmp->{$video_id}{fmt_list}    = $fmt_list;
+        $tmp->{$video_id}{list_id}     = $list_id;
         $tmp = _prepare_info_hash( $tmp, $video_id );
         if ( defined $tmp->{$video_id}{extractor_key} && $tmp->{$video_id}{extractor_key} =~ /^youtube\z/i) {
             $tmp->{$video_id}{youtube} = 1;
         }
     }
     if ( $is_list ) {
-        $info = choose_ids_from_list( $opt, $info, $tmp, $ids ); # untested
+        $info = choose_ids_from_list( $opt, $info, $tmp, $ids );
     }
     else {
         my ( $video_id ) = keys %$tmp;
