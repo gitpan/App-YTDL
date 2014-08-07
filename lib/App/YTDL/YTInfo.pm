@@ -12,22 +12,22 @@ use Encode                qw( decode_utf8 );
 use File::Spec::Functions qw( catfile );
 use List::Util            qw( max );
 
-use List::MoreUtils    qw( any );
-use LWP::UserAgent     qw();
-use Term::ANSIScreen   qw( :cursor :screen );
-use Term::Choose       qw( choose );
-use Text::LineFold     qw();
-use Try::Tiny          qw( try catch );
-use Unicode::GCString  qw();
-use URI                qw();
-use URI::Escape        qw( uri_unescape );
+use List::MoreUtils   qw( any );
+use LWP::UserAgent    qw();
+use Term::ANSIScreen  qw( :cursor :screen );
+use Term::Choose      qw( choose );
+use Text::LineFold    qw();
+use Try::Tiny         qw( try catch );
+use Unicode::GCString qw();
+use URI               qw();
+use URI::Escape       qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTConfig      qw( map_fmt_to_quality );
-use App::YTDL::YTData        qw( get_data );
-use App::YTDL::YTXML         qw( xml_to_entry_node );
-use App::YTDL::GenericFunc   qw( term_size unicode_trim encode_stdout_lax );
+use App::YTDL::YTConfig    qw( map_fmt_to_quality );
+use App::YTDL::YTData      qw( get_data );
+use App::YTDL::YTXML       qw( xml_to_entry_node );
+use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
 
 use constant {
     QUIT   => -1,
@@ -160,7 +160,7 @@ sub _get_print_info {
     my ( $opt, $info, $video_id ) = @_;
     $info = get_data( $opt, $info, $video_id );
     my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
-    my $info_url = URI->new( 'http://www.youtube.com/get_video_info' );
+    my $info_url = URI->new( 'https://www.youtube.com/get_video_info' );
     $info_url->query_form( 'video_id' => $video_id );
     my $res = $ua->get( $info_url->as_string );
     die "$res->status_line: $info_url" if ! $res->is_success;

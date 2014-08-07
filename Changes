@@ -1,6 +1,11 @@
 Revision history for App-YTDL
 
 
+0.016   2014-08-07
+        - Check if "youtube-dl" is available.
+        - Added a filter for lists.
+        - Output fixes and updates
+
 0.015   2014-07-21
         - Bugfixes and updates.
 

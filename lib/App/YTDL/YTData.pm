@@ -8,12 +8,13 @@ use 5.010001;
 use Exporter qw( import );
 our @EXPORT_OK = qw( get_data get_new_video_url choose_ids_from_list );
 
-use File::Which         qw( which );
-use IPC::System::Simple qw( capture );
-use JSON                qw( decode_json );
-use Term::ANSIScreen    qw( :screen );
-use Term::Choose        qw( choose );
-use Try::Tiny           qw( try catch );
+use File::Which          qw( which );
+use IPC::System::Simple  qw( capture );
+use JSON                 qw( decode_json );
+use Term::ANSIScreen     qw( :screen );
+use Term::Choose         qw( choose );
+use Term::ReadLine::Tiny qw();
+use Try::Tiny            qw( try catch );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
@@ -98,7 +99,6 @@ sub get_data {
             $formats->{$format_id}{width}       = $format->{width};
             $formats->{$format_id}{url}         = $format->{url};
         }
-        my $type;
         if ( $is_list ) {
             $video_id = $h_ref->{id} // $h_ref->{title};
         }
@@ -147,24 +147,44 @@ sub get_data {
 
 sub choose_ids_from_list {
     my ( $opt, $info, $tmp, $ids ) = @_;
-    my @video_print_list;
-    my @video_ids = grep { $_ ne $opt->{back} }
+    my $nr = 2;
+    my $regexp;
+    my $c;
+    FILTER: while ( 1 ) {
+        my @video_print_list;
+        my @tmp_video_ids;
+        my @video_ids = grep { $_ ne $opt->{back} }
                     sort {    ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' )
                            || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } @$ids;
-    for my $video_id ( @video_ids, $opt->{back} ) {
-        ( my $title = $tmp->{$video_id}{title} ) =~ s/\s+/ /g;
-        $title =~ s/^\s+|\s+\z//g;
-        push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration},
-                                                                $tmp->{$video_id}{published}, $title;
-    }
-    my @idx = choose(
-        [ @video_print_list ],
-        { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ $#video_print_list ] }
-    );
-    return if ! @idx || ! defined $idx[0] || $idx[0] == $#video_print_list;
-    for my $i ( @idx ) {
-        my $video_id = $video_ids[$i];
-        $info->{$video_id} = $tmp->{$video_id};
+        VIDEO_ID: for my $video_id ( @video_ids, $opt->{back} ) {
+            ( my $title = $tmp->{$video_id}{title} ) =~ s/\s+/ /g;
+            $title =~ s/^\s+|\s+\z//g;
+            if ( length $regexp && $title !~ /$regexp/i ) {
+                next VIDEO_ID if $video_id ne $opt->{back};
+            }
+            push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration},
+                                                                    $tmp->{$video_id}{published}, $title;
+            push @tmp_video_ids, $video_id;
+        }
+        my @pre = ( 'FILTER' . ( $c == $nr ? ' (last if empty)' : '' ) );
+        my @idx = choose(
+            [ @pre, @video_print_list ],
+            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ 0, $#video_print_list ] }
+        );
+        return if ! @idx || ! defined $idx[0] || $idx[0] == $#video_print_list;
+        if ( $idx[0] == 0 ) {
+            my $tiny = Term::ReadLine::Tiny->new();
+            $regexp = $tiny->readline( "Regexp: " );
+            $c++ if defined $regexp && $regexp eq '';
+            last FILTER if $c > $nr;
+            next FILTER;
+        }
+        for my $i ( @idx ) {
+            $i -= @pre;
+            my $video_id = $tmp_video_ids[$i];
+            $info->{$video_id} = $tmp->{$video_id};
+        }
+        last FILTER;
     }
     return $info;
 }

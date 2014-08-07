@@ -19,9 +19,9 @@ use Try::Tiny        qw( try catch );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTData        qw( get_new_video_url );
-use App::YTDL::YTInfo        qw( get_download_infos );
-use App::YTDL::GenericFunc   qw( sec_to_time insert_sep encode_fs encode_stdout );
+use App::YTDL::YTData      qw( get_new_video_url );
+use App::YTDL::YTInfo      qw( get_download_infos );
+use App::YTDL::GenericFunc qw( sec_to_time insert_sep encode_fs encode_stdout );
 
 use constant {
     HIDE_CURSOR => "\e[?25l",
@@ -73,9 +73,10 @@ sub _download_video {
     };
     my $p = {};
     TRY: for my $try ( 1 .. $opt->{retries} ) {
+        say '  -'  if $try > 1;
         $p->{size}      = -s $file_name_OS // 0;
         $p->{starttime} = gettimeofday;
-        my $retries     = "$try/$opt->{retries}";
+        my $retries     = $try == 1 ? '   ' : "$try/$opt->{retries}";
         my $video_count = "$nr from $total_nr";
         my $res;
         if ( ! $p->{size} ) {
@@ -89,7 +90,6 @@ sub _download_video {
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
-            $retries = '   ' if $try == 1;
             open my $fh, '>>:raw', $file_name_OS or die $!;
             printf _p_fmt( $opt, "start" ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
             $res = $ua->get(

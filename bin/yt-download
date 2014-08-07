@@ -3,28 +3,32 @@ use warnings;
 use strict;
 use 5.010001;
 
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
 use Pod::Usage            qw( pod2usage );
 
-use Encode::Locale         qw( decode_argv );
-use File::HomeDir          qw();
-use LWP::UserAgent         qw();
-use Term::ANSIScreen       qw( :cursor :screen );
-use Term::Choose           qw( choose );
-use Try::Tiny              qw( try catch );
-use URI                    qw();
-use URI::Escape            qw( uri_unescape );
+use Encode::Locale       qw( decode_argv );
+use File::HomeDir        qw();
+use File::Which          qw( which );
+use IPC::System::Simple  qw( capture );
+use LWP::UserAgent       qw();
+use Term::ANSIScreen     qw( :cursor :screen );
+use Term::Choose         qw( choose );
+use Term::ReadLine::Tiny qw();
+use Try::Tiny            qw( try catch );
+use URI                  qw();
+use URI::Escape          qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
+print "\e(U" if $^O eq 'MSWin32';
 
-use App::YTDL::YTConfig       qw( read_config_file options );
-use App::YTDL::YTData         qw( get_data choose_ids_from_list );
-use App::YTDL::YTDownload     qw( download_youtube );
-use App::YTDL::YTXML          qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
-use App::YTDL::GenericFunc    qw( encode_fs );
+use App::YTDL::YTConfig    qw( read_config_file options );
+use App::YTDL::YTData      qw( get_data choose_ids_from_list );
+use App::YTDL::YTDownload  qw( download_youtube );
+use App::YTDL::YTXML       qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
+use App::YTDL::GenericFunc qw( encode_fs );
 
 binmode STDIN,  ':encoding(console_in)';
 binmode STDOUT, ':encoding(console_out)';
@@ -83,6 +87,15 @@ $opt = options( $opt ) if $help;
 #$opt->{useragent} = '' if $opt->{useragent} eq ' ';
 mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir};
 
+try {
+    my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
+    my $capture = capture( $youtube_dl, '--version' );
+}
+catch {
+    say "Could not find 'youtube-dl' - 'youtube-dl' is required - http://rg3.github.io/youtube-dl/.";
+    exit 1;
+};
+
 my @ids;
 for my $file ( @$arg_file ) {
     open my $fh, '<:encoding(utf-8)', encode_fs( $file ) or die $!;
@@ -100,9 +113,8 @@ print locate( 1, 1 ), cldown;
 
 push @ids, @ARGV;
 if ( ! @ids ) {
-    print 'Enter url/id: ';
-    my $ids = <STDIN>;
-    chomp $ids;
+    my $tiny = Term::ReadLine::Tiny->new();
+    my $ids = $tiny->readline( 'Enter url/id: ' );
     @ids = split /\s+/, $ids;
     print up( 1 ), cldown;
 }
@@ -231,8 +243,8 @@ sub _list_id_to_info_hash {
     printf "Fetching %s info ... \n", $type eq 'PL' ? 'playlist' : 'channel';
     my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     my $url = URI->new( $type eq 'PL'
-        ? 'http://gdata.youtube.com/feeds/api/playlists/' . $list_id
-        : 'http://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
+        ? 'https://gdata.youtube.com/feeds/api/playlists/' . $list_id
+        : 'https://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
     );
     my $start_index = 1;
     my $max_results = 50;
@@ -288,7 +300,7 @@ sub _video_ids_to_info_hash {
     my ( $opt, $info, $video_ids, $type, $list_id ) = @_;
     my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     for my $video_id ( @$video_ids ) {
-        my $url = URI->new( 'http://gdata.youtube.com/feeds/api/videos/' . $video_id );
+        my $url = URI->new( 'https://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
         my $res = $ua->get( $url );
         die $res->status_line, ': ', $url if ! $res->is_success;
@@ -333,7 +345,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.015
+Version 0.016
 
 =cut
 
@@ -368,7 +380,7 @@ Instead of choosing the quality manually it is possible to set and use preferred
 
 To set the different options call C<yt-download -h>.
 
-C<App::YTDL> uses the L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
+C<App::YTDL> uses L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
 
 If L<Term::Twiddle> is available, C<yt-download> shows some feedback while fetching the data required for the video
 download.
