@@ -1,9 +1,9 @@
 #!/usr/local/bin/perl
 use warnings;
 use strict;
-use 5.010001;
+use 5.010000;
 
-our $VERSION = '0.016';
+our $VERSION = '0.017';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -70,7 +70,7 @@ my $opt = {
     max_len_f_name => 62,
     yt_api_v       => 2,
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
-    yt_rp          => qr/(?:youtube|youtu\.be|yourepeat|tube\.majestyc)/i,
+    yt_regexp      => qr/(?:youtube|youtu\.be|yourepeat|tube\.majestyc)/i,
     kb_sec_len     => 5,
     max_info_width => 120,
     right_margin   => $^O eq 'MSWin32' ? 1 : 2,
@@ -83,8 +83,6 @@ my $opt = {
 
 $opt = read_config_file( $opt, $opt->{config_file} );
 $opt = options( $opt ) if $help;
-#If entered a single space, the useragent is set to an empty string.
-#$opt->{useragent} = '' if $opt->{useragent} eq ' ';
 mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir};
 
 try {
@@ -164,7 +162,7 @@ sub _video_id {
     if ( $id =~ m{^[\p{PerlWord}-]{11}\z} ) {
         return $id;
     }
-    if ( $id !~ $opt->{yt_rp} ) {
+    if ( $id !~ $opt->{yt_regexp} ) {
         return;
     }
     elsif ( $id =~ m{/.*?[?&;!](?:v|video_id)=([^$invalid_char]+)} ) {
@@ -190,7 +188,7 @@ sub _playlist_id {
     if ( $id =~ m{^p#(?:[FP]L)?([^$invalid_char]+)\z} ) {
         return $1;
     }
-    if ( $id !~ $opt->{yt_rp} ) {
+    if ( $id !~ $opt->{yt_regexp} ) {
         return;
     }
     elsif ( $id =~ m{/.*?[?&;!]list=([^$invalid_char]+)} ) {
@@ -210,7 +208,7 @@ sub _user_id {
     if ( $id =~ m{^c#([^$invalid_char]+)\z} ) {
         return $1;
     }
-    if ( $id !~ $opt->{yt_rp} ) {
+    if ( $id !~ $opt->{yt_regexp} ) {
         return;
     }
     elsif ( $id =~ m{/user/([^$invalid_char]+)} ) {
@@ -227,7 +225,7 @@ sub _more_ids {
     if ( ! $id ) {
         return;
     }
-    elsif ( $id !~ $opt->{yt_rp} ) {
+    elsif ( $id !~ $opt->{yt_regexp} ) {
         return;
     }
     elsif ( uri_unescape( $id ) =~ m{youtu\.?be.*video_ids=([^$invalid_char]+(?:,[^$invalid_char]+)*)} ) {
@@ -345,7 +343,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.016
+Version 0.017
 
 =cut
 
@@ -477,7 +475,7 @@ Choose an alternative YouTube video directory.
 
 =head2 Perl version
 
-Requires Perl version 5.10.1 or greater.
+Requires Perl version 5.10.0 or greater.
 
 =head2 youtube-dl
 

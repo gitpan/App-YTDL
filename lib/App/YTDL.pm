@@ -2,9 +2,9 @@ package App::YTDL;
 
 use warnings;
 use strict;
-use 5.010001;
+use 5.010000;
 
-our $VERSION = '0.016';
+our $VERSION = '0.017';
 
 
 1;
@@ -22,7 +22,7 @@ App::YTDL - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.016
+Version 0.017
 
 =cut
 

@@ -3,7 +3,7 @@ App::YTDL::YTInfo;
 
 use warnings;
 use strict;
-use 5.010001;
+use 5.010000;
 
 use Exporter qw( import );
 our @EXPORT_OK = qw( get_download_infos );

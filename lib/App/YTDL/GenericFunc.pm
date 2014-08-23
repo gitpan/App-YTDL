@@ -3,7 +3,7 @@ App::YTDL::GenericFunc;
 
 use warnings;
 use strict;
-use 5.010001;
+use 5.010000;
 
 use Exporter qw( import );
 our @EXPORT_OK = qw( term_size sec_to_time insert_sep unicode_trim choose_a_dir choose_a_number

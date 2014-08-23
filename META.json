@@ -61,7 +61,7 @@
             "Unicode::GCString" : "0",
             "Unicode::Normalize" : "0",
             "XML::LibXML" : "0",
-            "perl" : "5.010001"
+            "perl" : "5.010000"
          }
       }
    },
@@ -73,5 +73,5 @@
          "web" : "https://github.com/kuerbis/App-YTDL"
       }
    },
-   "version" : "0.016"
+   "version" : "0.017"
 }

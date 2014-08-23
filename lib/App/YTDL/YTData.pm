@@ -3,7 +3,7 @@ App::YTDL::YTData;
 
 use warnings;
 use strict;
-use 5.010001;
+use 5.010000;
 
 use Exporter qw( import );
 our @EXPORT_OK = qw( get_data get_new_video_url choose_ids_from_list );
@@ -169,9 +169,9 @@ sub choose_ids_from_list {
         my @pre = ( 'FILTER' . ( $c == $nr ? ' (last if empty)' : '' ) );
         my @idx = choose(
             [ @pre, @video_print_list ],
-            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ 0, $#video_print_list ] }
+            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ 0, $#video_print_list + @pre ] }
         );
-        return if ! @idx || ! defined $idx[0] || $idx[0] == $#video_print_list;
+        return if ! @idx || ! defined $idx[0] || $idx[0] == $#video_print_list + @pre;
         if ( $idx[0] == 0 ) {
             my $tiny = Term::ReadLine::Tiny->new();
             $regexp = $tiny->readline( "Regexp: " );
