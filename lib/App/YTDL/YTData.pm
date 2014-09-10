@@ -6,15 +6,15 @@ use strict;
 use 5.010000;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( get_data get_new_video_url choose_ids_from_list );
+our @EXPORT_OK = qw( get_data get_new_video_url choose_from_list_and_add_to_info );
 
-use File::Which          qw( which );
-use IPC::System::Simple  qw( capture );
-use JSON                 qw( decode_json );
-use Term::ANSIScreen     qw( :screen );
-use Term::Choose         qw( choose );
-use Term::ReadLine::Tiny qw();
-use Try::Tiny            qw( try catch );
+use File::Which            qw( which );
+use IPC::System::Simple    qw( capture );
+use JSON                   qw( decode_json );
+use Term::ANSIScreen       qw( :screen );
+use Term::Choose           qw( choose );
+use Term::ReadLine::Simple qw();
+use Try::Tiny              qw( try catch );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
@@ -30,6 +30,7 @@ sub get_new_video_url {
     my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
     my @cmd = ( $youtube_dl );
     push @cmd, '--user-agent', $opt->{useragent} if defined $opt->{useragent};
+    #push @cmd, '--socket-timeout 10';
     #push @cmd, '-v';
     push @cmd, '--format', $fmt, '--get-url', '--', $video_id;
     my $video_url = capture( @cmd );
@@ -42,6 +43,7 @@ sub get_data {
     my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
     my @cmd = ( $youtube_dl );
     push @cmd, '--user-agent', $opt->{useragent} if defined $opt->{useragent};
+    #push @cmd, '--socket-timeout 10';
     #push @cmd, '-v';
     push @cmd, '--dump-json', '--', $video_id;
     my $capture;
@@ -76,6 +78,7 @@ sub get_data {
     my @json = split /\n+/, $capture;
     my $is_list = @json > 1 ? 1 : 0;
     my $list_id;
+    my $playlist_id = $info->{$video_id}{playlist_id};
     if ( $is_list ) {
         delete $info->{$video_id};
         $list_id = 'OT_' . $video_id;
@@ -120,6 +123,7 @@ sub get_data {
             #fulltitle       => $h_ref->{fulltitle},
             like_count      => $h_ref->{like_count},
             playlist        => $h_ref->{playlist},
+            playlist_id     => $playlist_id,
             #playlist_index  => $h_ref->{playlist_index},
             published_raw   => $h_ref->{upload_date},       # published_raw
             #stitle          => $h_ref->{stitle},
@@ -145,7 +149,7 @@ sub get_data {
 }
 
 
-sub choose_ids_from_list {
+sub choose_from_list_and_add_to_info {
     my ( $opt, $info, $tmp, $ids ) = @_;
     my $nr = 2;
     my $regexp;
@@ -171,10 +175,11 @@ sub choose_ids_from_list {
             [ @pre, @video_print_list ],
             { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ 0, $#video_print_list + @pre ] }
         );
-        return if ! @idx || ! defined $idx[0] || $idx[0] == $#video_print_list + @pre;
+        return if ! @idx || ! defined $idx[0];
+        return if $idx[-1] == $#video_print_list + @pre;
         if ( $idx[0] == 0 ) {
-            my $tiny = Term::ReadLine::Tiny->new();
-            $regexp = $tiny->readline( "Regexp: " );
+            my $trs = Term::ReadLine::Simple->new();
+            $regexp = $trs->readline( "Regexp: " );
             $c++ if defined $regexp && $regexp eq '';
             last FILTER if $c > $nr;
             next FILTER;
@@ -186,7 +191,7 @@ sub choose_ids_from_list {
         }
         last FILTER;
     }
-    return $info;
+    #return $info;
 }
 
 

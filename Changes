@@ -1,6 +1,12 @@
 Revision history for App-YTDL
 
 
+0.018   2014-09-10
+        - Bugfixes.
+        - Code refactoring.
+        - Made "Term::Twiddle" a prerequisite if OS is not Win32.
+        - Update documentation:
+
 0.017   2014-08-23
         - Bugfix lists.
         - Perl minimum version from "5.10.1" to "5.10.0".

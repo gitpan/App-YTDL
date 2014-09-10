@@ -14,10 +14,10 @@ use FindBin               qw( $RealBin $RealScript );
 use List::Util            qw( max );
 use Pod::Usage            qw( pod2usage );
 
-use JSON                 qw();
-use Term::Choose         qw( choose );
-use Term::ReadLine::Tiny qw();
-use Text::LineFold       qw();
+use JSON                   qw();
+use Term::Choose           qw( choose );
+use Term::ReadLine::Simple qw();
+use Text::LineFold         qw();
 
 
 use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
@@ -257,9 +257,9 @@ sub _opt_choose_a_directory {
 sub _local_read_line {
     my ( $opt, $section, $prompt ) = @_;
     my $current = $opt->{$section} // '';
-    my $tiny = Term::ReadLine::Tiny->new();
+    my $trs = Term::ReadLine::Simple->new();
     # Readline
-    my $string = $tiny->readline( $prompt, { default => $current } );
+    my $string = $trs->readline( $prompt, { default => $current } );
     $opt->{$section} = $string;
     $opt->{change}++;
     return;

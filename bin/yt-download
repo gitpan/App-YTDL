@@ -3,29 +3,29 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.017';
+our $VERSION = '0.018';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
 use Pod::Usage            qw( pod2usage );
 
-use Encode::Locale       qw( decode_argv );
-use File::HomeDir        qw();
-use File::Which          qw( which );
-use IPC::System::Simple  qw( capture );
-use LWP::UserAgent       qw();
-use Term::ANSIScreen     qw( :cursor :screen );
-use Term::Choose         qw( choose );
-use Term::ReadLine::Tiny qw();
-use Try::Tiny            qw( try catch );
-use URI                  qw();
-use URI::Escape          qw( uri_unescape );
+use Encode::Locale         qw( decode_argv );
+use File::HomeDir          qw();
+use File::Which            qw( which );
+use IPC::System::Simple    qw( capture );
+use LWP::UserAgent         qw();
+use Term::ANSIScreen       qw( :cursor :screen );
+use Term::Choose           qw( choose );
+use Term::ReadLine::Simple qw();
+use Try::Tiny              qw( try catch );
+use URI                    qw();
+use URI::Escape            qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 print "\e(U" if $^O eq 'MSWin32';
 
 use App::YTDL::YTConfig    qw( read_config_file options );
-use App::YTDL::YTData      qw( get_data choose_ids_from_list );
+use App::YTDL::YTData      qw( get_data choose_from_list_and_add_to_info );
 use App::YTDL::YTDownload  qw( download_youtube );
 use App::YTDL::YTXML       qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::GenericFunc qw( encode_fs );
@@ -111,8 +111,8 @@ print locate( 1, 1 ), cldown;
 
 push @ids, @ARGV;
 if ( ! @ids ) {
-    my $tiny = Term::ReadLine::Tiny->new();
-    my $ids = $tiny->readline( 'Enter url/id: ' );
+    my $trs = Term::ReadLine::Simple->new();
+    my $ids = $trs->readline( 'Enter url/id: ' );
     @ids = split /\s+/, $ids;
     print up( 1 ), cldown;
 }
@@ -133,15 +133,15 @@ sub _parse_arguments {
     for my $id ( @ids ) {
         if ( my $channel_id = _user_id( $opt, $id, $invalid_char ) ) {
             my $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
-            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
+            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $playlist_id = _playlist_id( $opt, $id, $invalid_char ) ) {
             my $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
-            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
+            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $more_ids = _more_ids( $opt, $id, $invalid_char ) ) {
             my $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
-            $info = choose_ids_from_list( $opt, $info, $tmp, [ keys %$tmp ] );
+            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
         }
         elsif ( my $video_id = _video_id( $opt, $id, $invalid_char )  ) {
             $info->{$video_id}{youtube} = 1;
@@ -343,7 +343,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.017
+Version 0.018
 
 =cut
 
@@ -379,9 +379,6 @@ Instead of choosing the quality manually it is possible to set and use preferred
 To set the different options call C<yt-download -h>.
 
 C<App::YTDL> uses L<youtube-dl|http://rg3.github.io/youtube-dl/> to get the data required for the video download.
-
-If L<Term::Twiddle> is available, C<yt-download> shows some feedback while fetching the data required for the video
-download.
 
 =head3 Legacy encodings
 

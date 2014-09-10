@@ -10,6 +10,11 @@ if ( $^O eq 'MSWin32' ) {
         'Win32::Console::ANSI' => 0,
     );
 }
+else {
+    %prereqs_os_specific = (
+        'Term::Twiddle'        => 0,
+    );
+}
 
 
 WriteMakefile(
@@ -52,9 +57,9 @@ WriteMakefile(
         'LWP::UserAgent'         => 0,
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
-        'Term::Choose'           => '1.111',
-        'Term::Choose::Util'     => '0.011',
-        'Term::ReadLine::Tiny'   => 0,
+        'Term::Choose'           => 0,
+        'Term::Choose::Util'     => 0,
+        'Term::ReadLine::Simple' => 0,
         'Text::LineFold'         => 0,
         'Time::HiRes'            => 0,
         'Try::Tiny'              => 0,
