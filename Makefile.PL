@@ -58,7 +58,7 @@ WriteMakefile(
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
         'Term::Choose'           => 0,
-        'Term::Choose::Util'     => 0,
+        'Term::Choose::Util'     => '0.016',
         'Term::ReadLine::Simple' => 0,
         'Text::LineFold'         => 0,
         'Time::HiRes'            => 0,

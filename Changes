@@ -1,6 +1,9 @@
 Revision history for App-YTDL
 
 
+0.019   2014-09-14
+        - Added "Term::Choose::Util" minimum version.
+
 0.018   2014-09-10
         - Bugfixes.
         - Code refactoring.
