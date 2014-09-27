@@ -13,7 +13,6 @@ use File::Spec::Functions qw( catfile );
 use List::Util            qw( max );
 
 use List::MoreUtils   qw( any );
-use LWP::UserAgent    qw();
 use Term::ANSIScreen  qw( :cursor :screen );
 use Term::Choose      qw( choose );
 use Text::LineFold    qw();
@@ -25,7 +24,7 @@ use URI::Escape       qw( uri_unescape );
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
 use App::YTDL::YTConfig    qw( map_fmt_to_quality );
-use App::YTDL::YTData      qw( get_data );
+use App::YTDL::YTData      qw( get_data wrapper_get );
 use App::YTDL::YTXML       qw( xml_to_entry_node );
 use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
 
@@ -159,12 +158,10 @@ sub _status_not_ok {
 sub _get_print_info {
     my ( $opt, $info, $video_id ) = @_;
     $info = get_data( $opt, $info, $video_id );
-    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     my $info_url = URI->new( 'https://www.youtube.com/get_video_info' );
     $info_url->query_form( 'video_id' => $video_id );
-    my $res = $ua->get( $info_url->as_string );
-    die "$res->status_line: $info_url" if ! $res->is_success;
-    $opt->{up}++;
+    my $res = wrapper_get( $opt, $info, $info_url->as_string );
+    $opt->{up}++; ###
     for my $item ( split /&/, $res->decoded_content ) {
         my ( $key, $value ) = split /=/, $item;
         if ( defined $value && $key =~ /^(?:title|keywords|reason|status)\z/ ) {

@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.020   2014-09-27
+        - New option "timeout".
+        - Ask user what to do if error while fetching download info.
+
 0.019   2014-09-14
         - Added "Term::Choose::Util" minimum version.
 

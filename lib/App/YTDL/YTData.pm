@@ -6,11 +6,12 @@ use strict;
 use 5.010000;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( get_data get_new_video_url choose_from_list_and_add_to_info );
+our @EXPORT_OK = qw( get_data get_new_video_url choose_from_list_and_add_to_info wrapper_get );
 
 use File::Which            qw( which );
 use IPC::System::Simple    qw( capture );
 use JSON                   qw( decode_json );
+use LWP::UserAgent         qw();
 use Term::ANSIScreen       qw( :screen );
 use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
@@ -24,17 +25,61 @@ sub HIDE_CURSOR () { "\e[?25l" }
 sub SHOW_CURSOR () { "\e[?25h" }
 
 
+sub wrapper_get {
+    my ( $opt, $info, $url ) = @_;
+    my $show_progress = 1;
+    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, timeout => $opt->{timeout}, show_progress => $show_progress );
+    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
+    my $choice;
+    my $res;
+    while ( 1 ) {
+        $choice = $continue;
+        try {
+            $res = $ua->get( $url );
+            die $res->status_line, ': ', $url if ! $res->is_success;
+        }
+        catch {
+            my $prompt = "\n$_\n";
+            $choice = choose(
+                [ undef, $retry, $continue ],
+                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
+            );
+        };
+        exit if ! $choice;
+        redo if $choice eq $retry;
+        return $res;
+    }
+}
+
+
 sub get_new_video_url {
     my ( $opt, $info, $video_id ) = @_;
     my $fmt = $info->{$video_id}{fmt};
     my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
     my @cmd = ( $youtube_dl );
     push @cmd, '--user-agent', $opt->{useragent} if defined $opt->{useragent};
-    #push @cmd, '--socket-timeout 10';
+    push @cmd, '--socket-timeout', $opt->{timeout};
     #push @cmd, '-v';
     push @cmd, '--format', $fmt, '--get-url', '--', $video_id;
-    my $video_url = capture( @cmd );
-    return $video_url;
+    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
+    my $choice;
+    my $video_url;
+    while ( 1 ) {
+        $choice = $continue;
+        try {
+            $video_url = capture( @cmd );
+        }
+        catch {
+            my $prompt = "\n$_\n";
+            $choice = choose(
+                [ undef, $retry, $continue ],
+                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
+            );
+        };
+        exit if ! $choice;
+        redo if $choice eq $retry;
+        return $video_url;
+    }
 }
 
 
@@ -43,7 +88,7 @@ sub get_data {
     my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
     my @cmd = ( $youtube_dl );
     push @cmd, '--user-agent', $opt->{useragent} if defined $opt->{useragent};
-    #push @cmd, '--socket-timeout 10';
+    push @cmd, '--socket-timeout', $opt->{timeout};
     #push @cmd, '-v';
     push @cmd, '--dump-json', '--', $video_id;
     my $capture;
@@ -56,25 +101,42 @@ sub get_data {
     catch {
         $spinner = undef;
     };
-    if ( $spinner ) {
-        print HIDE_CURSOR;
-        print $message;
-        $spinner->thingy( [ "[\\]", "[|]", "[/]", "[-]" ] );
-        $spinner->start;
-        $capture = capture( @cmd );
-        $spinner->stop;
-        print "\r", clline;
-        print $message . "done.\n";
-        print SHOW_CURSOR;
-    }
-    else {
-        print $message . "...";
-        $capture = capture( @cmd );
-        print "\r", clline;
-        print $message . "done.\n";
-    }
-    $opt->{up}++;
+    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
+    my $choice;
 
+    while ( 1 ) {
+        $choice = $continue;
+        try {
+            if ( $spinner ) {
+                print HIDE_CURSOR;
+                print $message;
+                $spinner->thingy( [ "[\\]", "[|]", "[/]", "[-]" ] );
+                $spinner->start;
+                $capture = capture( @cmd );
+                $spinner->stop;
+                print "\r", clline;
+                print $message . "done.\n";
+                print SHOW_CURSOR;
+            }
+            else {
+                print $message . "...";
+                $capture = capture( @cmd );
+                print "\r", clline;
+                print $message . "done.\n";
+            }
+        }
+        catch {
+            my $prompt = "\n$_\n";
+            $choice = choose(
+                [ undef, $retry, $continue ],
+                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
+            );
+        };
+        exit if ! $choice;
+        redo if $choice eq $retry;
+        last;
+    }
+    $opt->{up}++; ##
     my @json = split /\n+/, $capture;
     my $is_list = @json > 1 ? 1 : 0;
     my $list_id;

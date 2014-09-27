@@ -99,6 +99,7 @@ sub options {
     my $auto_fmt     = "- Set auto quality";
     my $preferred    = "- Preferred qualities";
     my $retries      = "- Download retries";
+    my $timeout      = "- Timeout";
     my $logging      = "- Enable logging";
     my $info_width   = "- Max info width";
     my $auto_width   = "- Enable auto width";
@@ -113,6 +114,7 @@ sub options {
         $auto_fmt     => 'auto_quality',
         $preferred    => 'preferred',
         $retries      => 'retries',
+        $timeout      => 'timeout',
         $logging      => 'log_info',
         $info_width   => 'max_info_width',
         $auto_width   => 'auto_width',
@@ -128,6 +130,7 @@ sub options {
         $auto_fmt,
         $preferred,
         $retries,
+        $timeout,
         $logging,
         $info_width,
         $auto_width,
@@ -203,6 +206,11 @@ sub options {
         }
         elsif ( $choice eq "retries" ) {
             my $prompt = 'Download retries';
+            my $digits = 3;
+            _opt_number_range( $opt, $choice, $prompt, 3 )
+        }
+        elsif ( $choice eq "timeout" ) {
+            my $prompt = 'Connection timeout (s)';
             my $digits = 3;
             _opt_number_range( $opt, $choice, $prompt, 3 )
         }

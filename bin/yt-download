@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.019';
+our $VERSION = '0.020';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -13,7 +13,6 @@ use Encode::Locale         qw( decode_argv );
 use File::HomeDir          qw();
 use File::Which            qw( which );
 use IPC::System::Simple    qw( capture );
-use LWP::UserAgent         qw();
 use Term::ANSIScreen       qw( :cursor :screen );
 use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
@@ -25,7 +24,7 @@ use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 print "\e(U" if $^O eq 'MSWin32';
 
 use App::YTDL::YTConfig    qw( read_config_file options );
-use App::YTDL::YTData      qw( get_data choose_from_list_and_add_to_info );
+use App::YTDL::YTData      qw( get_data choose_from_list_and_add_to_info wrapper_get );
 use App::YTDL::YTDownload  qw( download_youtube );
 use App::YTDL::YTXML       qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::GenericFunc qw( encode_fs );
@@ -76,6 +75,7 @@ my $opt = {
     right_margin   => $^O eq 'MSWin32' ? 1 : 2,
     auto_width     => 1,
     retries        => 5,
+    timeout        => 15,
     overwrite      => 0,
     auto_quality   => 1,
     preferred      => [ 43 ],
@@ -239,7 +239,6 @@ sub _list_id_to_info_hash {
     my( $opt, $type, $list_id ) = @_;
     my $info = {};
     printf "Fetching %s info ... \n", $type eq 'PL' ? 'playlist' : 'channel';
-    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     my $url = URI->new( $type eq 'PL'
         ? 'https://gdata.youtube.com/feeds/api/playlists/' . $list_id
         : 'https://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
@@ -251,8 +250,7 @@ sub _list_id_to_info_hash {
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
         try {
-            my $res = $ua->get( $url->as_string );
-            die $res->status_line, ': ', $url if ! $res->is_success;
+            my $res = wrapper_get( $opt, $info, $url->as_string );
             my $xml = $res->decoded_content;
             my @e_nodes = xml_to_entry_node( $opt, $xml );
             $count_e_nodes = @e_nodes;
@@ -296,12 +294,10 @@ sub _entry_nodes_to_info_hash {
 
 sub _video_ids_to_info_hash {
     my ( $opt, $info, $video_ids, $type, $list_id ) = @_;
-    my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 1 );
     for my $video_id ( @$video_ids ) {
         my $url = URI->new( 'https://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
-        my $res = $ua->get( $url );
-        die $res->status_line, ': ', $url if ! $res->is_success;
+        my $res = wrapper_get( $opt, $info, $url );
         my $xml = $res->decoded_content;
         my $e_node = xml_to_entry_node( $opt, $xml );
         $info = entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
@@ -343,7 +339,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.019
+Version 0.020
 
 =cut
 
@@ -443,6 +439,11 @@ Sets the preferred qualities (fmts)
 =head2 Download retries
 
 Sets the number of download retries.
+
+=head2 Connection timeout
+
+I<timeout> (seconds) is used as the value for the C<youtube-dl> parameter C<--socket-timeout>. I<timeout> is also used
+as the value for the L<LWP::UserAgent> option C<timeout> when fetching the data required for the video download.
 
 =head2 Enable logging
 

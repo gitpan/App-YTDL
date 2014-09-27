@@ -51,4 +51,4 @@ requires:
   perl: '5.010000'
 resources:
   repository: https://github.com/kuerbis/App-YTDL.git
-version: '0.019'
+version: '0.020'
