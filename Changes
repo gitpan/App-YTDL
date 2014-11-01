@@ -1,6 +1,11 @@
 Revision history for App-YTDL
 
 
+0.020_01   2014-11-01
+        - Don't reset the previous selected videos if "FILTER" is called.
+        - "Term::Choose" minimum version is "1.116_01".
+        - Update documentation.
+
 0.020   2014-09-27
         - New option "timeout".
         - Ask user what to do if error while fetching download info.

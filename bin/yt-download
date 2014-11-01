@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.020';
+our $VERSION = '0.020_01';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -266,11 +266,6 @@ sub _list_id_to_info_hash {
         my $prompt = "No videos found: $type - $url";
         choose( [ 'Print ENTER' ], { prompt => $prompt } );
     }
-    else {
-        $info->{$opt->{back}} = {
-            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00', #
-            view_count => 0, content => '', type => $opt->{back}, published => '0000-00-00' };
-    }
     my $up = keys %$info;
     print up( $up + 2 ), cldown;
     return $info;
@@ -318,11 +313,6 @@ sub _more_url_to_info_hash {
         my $prompt = "$type : $list_id - $_";
         choose( [ 'Print ENTER' ], { prompt => $prompt } );
     };
-    if ( keys %$info ) {
-        $info->{$opt->{back}} = {
-            title => '', author => '', keywords => '', avg_rating => '', length_seconds => 0, duration => '0:00:00', #
-            view_count => 0, content => '', type => $opt->{back}, published => '0000-00-00' };
-    }
     return $info;
 }
 
@@ -339,7 +329,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.020
+Version 0.020_01
 
 =cut
 
@@ -367,6 +357,8 @@ separated.
 =head1 DESCRIPTION
 
 Download single YouTube videos or/and choose videos from playlists or/and channels.
+
+When choosing from a channel or list it is possible to filter the displayed items with a regexp.
 
 Before the download the script shows some video info and lets you choose the video quality from the available qualities.
 

@@ -12,6 +12,7 @@ use File::Which            qw( which );
 use IPC::System::Simple    qw( capture );
 use JSON                   qw( decode_json );
 use LWP::UserAgent         qw();
+use List::Util             qw( any none );
 use Term::ANSIScreen       qw( :screen );
 use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
@@ -126,6 +127,7 @@ sub get_data {
             }
         }
         catch {
+            $spinner->stop if $spinner;
             my $prompt = "\n$_\n";
             $choice = choose(
                 [ undef, $retry, $continue ],
@@ -213,47 +215,116 @@ sub get_data {
 
 sub choose_from_list_and_add_to_info {
     my ( $opt, $info, $tmp, $ids ) = @_;
-    my $nr = 2;
     my $regexp;
-    my $c;
+    my $back   = '<<';
+    my $ok     = '-OK-';
+    my $close  = 'CLOSE';
+    my $filter = '     FILTER';
+    my $menu   = '       MENU';
+    my %chosen_video_ids;
+    my @last_chosen_video_ids = ();
+
     FILTER: while ( 1 ) {
+        my @pre = ( $menu );
+        push @pre, $filter if ! length $regexp;
         my @video_print_list;
         my @tmp_video_ids;
-        my @video_ids = grep { $_ ne $opt->{back} }
-                    sort {    ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' )
-                           || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } @$ids;
-        VIDEO_ID: for my $video_id ( @video_ids, $opt->{back} ) {
+        my $index = $#pre;
+        my $mark = [];
+        my @video_ids = sort {    ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' )
+                               || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } @$ids;
+
+        VIDEO_ID: for my $video_id ( @video_ids ) {
+
             ( my $title = $tmp->{$video_id}{title} ) =~ s/\s+/ /g;
             $title =~ s/^\s+|\s+\z//g;
             if ( length $regexp && $title !~ /$regexp/i ) {
-                next VIDEO_ID if $video_id ne $opt->{back};
+                next VIDEO_ID;
             }
-            push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration},
-                                                                    $tmp->{$video_id}{published}, $title;
+
+            push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{published}, $title;
             push @tmp_video_ids, $video_id;
+            $index++;
+            push @$mark, $index if any { $video_id eq $_ } keys %chosen_video_ids;
         }
-        my @pre = ( 'FILTER' . ( $c == $nr ? ' (last if empty)' : '' ) );
+        my $choices = [ @pre, @video_print_list ];
         my @idx = choose(
-            [ @pre, @video_print_list ],
-            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, no_spacebar => [ 0, $#video_print_list + @pre ] }
+            $choices,
+            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, mark => $mark, no_spacebar => [ 0 .. $#pre ] }
         );
-        return if ! @idx || ! defined $idx[0];
-        return if $idx[-1] == $#video_print_list + @pre;
-        if ( $idx[0] == 0 ) {
+        return if ! defined $idx[0];
+        my $choice = $choices->[$idx[0]];
+        if ( $choice eq $menu ) {
+            shift @idx;
+            my $menu_choice = choose(
+                [ undef, $ok, $close ],
+                { prompt => 'Your choice: ', layout => 0, default => 0, undef => $back }
+            );
+            if ( ! defined $menu_choice ) {
+                if ( length $regexp ) {
+                    delete @{$info}{ @last_chosen_video_ids };
+                    $regexp = '';
+                    next FILTER;
+                }
+                else {
+                    delete @{$info}{ keys %chosen_video_ids };
+                    return;
+                }
+            }
+            elsif ( $menu_choice eq $ok ) {
+                @last_chosen_video_ids = ();
+                for my $i ( @idx ) {
+                    my $video_id = $tmp_video_ids[$i - @pre];
+                    $info->{$video_id} = $tmp->{$video_id};
+                    $chosen_video_ids{$video_id}++;
+                    push @last_chosen_video_ids, $video_id;
+                }
+                for my $m ( @$mark ) {
+                    if ( none { $m == $_ } @idx ) {
+                        my $video_id = $tmp_video_ids[$m - @pre];
+                        delete $chosen_video_ids{$video_id};
+                        delete $info->{$video_id};
+                    }
+                }
+                if ( length $regexp ) {
+                    $regexp = '';
+                    next FILTER;
+                }
+                else {
+                    last FILTER;
+                }
+            }
+            elsif ( $choice eq $close ) {
+                next FILTER;
+            }
+        }
+        elsif ( $choice eq $filter ) {
             my $trs = Term::ReadLine::Simple->new();
             $regexp = $trs->readline( "Regexp: " );
-            $c++ if defined $regexp && $regexp eq '';
-            last FILTER if $c > $nr;
             next FILTER;
         }
-        for my $i ( @idx ) {
-            $i -= @pre;
-            my $video_id = $tmp_video_ids[$i];
-            $info->{$video_id} = $tmp->{$video_id};
+        else {
+            @last_chosen_video_ids = ();
+            for my $i ( @idx ) {
+                my $video_id = $tmp_video_ids[$i - @pre];
+                $info->{$video_id} = $tmp->{$video_id};
+                $chosen_video_ids{$video_id}++;
+                push @last_chosen_video_ids, $video_id;
+            }
+            for my $m ( @$mark ) {
+                if ( none { $m == $_ } @idx ) {
+                    my $video_id = $tmp_video_ids[$m - @pre];
+                    delete $chosen_video_ids{$video_id};
+                    delete $info->{$video_id};
+                }
+            }
+            if ( ! length $regexp ) {
+                last FILTER;
+            }
+            $regexp = '';
+            next FILTER;
         }
-        last FILTER;
     }
-    #return $info;
 }
 
 

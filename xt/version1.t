@@ -5,7 +5,7 @@ use Test::More;
 
 
 use Test::Version qw( version_all_ok ), {
-    is_strict   => 1,
+    #is_strict   => 1,
     has_version => 1,
 };
 

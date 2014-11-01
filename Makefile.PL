@@ -57,7 +57,7 @@ WriteMakefile(
         'LWP::UserAgent'         => 0,
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
-        'Term::Choose'           => 0,
+        'Term::Choose'           => '1.116_01',
         'Term::Choose::Util'     => '0.016',
         'Term::ReadLine::Simple' => 0,
         'Text::LineFold'         => 0,
