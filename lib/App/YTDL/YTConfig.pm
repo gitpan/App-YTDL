@@ -23,70 +23,85 @@ use Text::LineFold         qw();
 use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
 
 
-sub _fmts_sorted {
-    return [ 13, 17, 36, 5, 6, 34, 35, 18, 22, 37, 38, 82 .. 85, 43 .. 46, 100 .. 102, 139 .. 141, 160, 133 .. 138, 264, 171 .. 172, 242 .. 248, 271 .. 272];
-}
-
-
 sub map_fmt_to_quality {
-    return {
-        13 => ' 176x144  3GP',
-        17 => ' 176x144  3GP',
-        36 => ' 320x240  3GP',
+    return [
+        [ 13 => ' 176x144  3GP', ],
+        [ 17 => ' 176x144  3GP', ],
+        [ 36 => ' 320x240  3GP', ],
 
-         5 => ' 360x240  FLV', # 400
-         6 => ' 480x270  FLV',
-        34 => ' 640x360  FLV',
-        35 => ' 854x480  FLV',
+         [ 5 => ' 360x240  FLV', ], # 400
+         [ 6 => ' 480x270  FLV', ],
+        [ 34 => ' 640x360  FLV', ],
+        [ 35 => ' 854x480  FLV', ],
 
-        18 => ' 640x360  MP4',
-        22 => '1280x720  MP4',
-        37 => '1920x1080 MP4',
-        38 => '4096x3072 MP4',
+        [ 18 => ' 640x360  MP4', ],
+        [ 22 => '1280x720  MP4', ],
+        [ 37 => '1920x1080 MP4', ],
+        [ 38 => '4096x3072 MP4', ],
 
-        43 => ' 640x360  WebM',
-        44 => ' 854x480  WebM',
-        45 => '1280x720  WebM',
-        46 => '1920x1080 WebM',
+        [ 43 => ' 640x360  WebM', ],
+        [ 44 => ' 854x480  WebM', ],
+        [ 45 => '1280x720  WebM', ],
+        [ 46 => '1920x1080 WebM', ],
 
-        82 => ' 640x360  MP4_3D',
-        83 => ' 854x480  MP4_3D',
-        84 => '1280x720  MP4_3D',
-        85 => '1920x1080 MP4_3D',
+        [ 82 => ' 640x360  MP4_3D', ],
+        [ 83 => ' 854x480  MP4_3D', ],
+        [ 84 => '1280x720  MP4_3D', ],
+        [ 85 => '1920x1080 MP4_3D', ],
 
-        100 => ' 640x360  WebM_3D',
-        101 => ' 854x480  WebM_3D',
-        102 => '1280x720  WebM_3D',
+        [ 100 => ' 640x360  WebM_3D', ],
+        [ 101 => ' 854x480  WebM_3D', ],
+        [ 102 => '1280x720  WebM_3D', ],
 
-        139 => 'DASH audio   48  M4A',
-        140 => 'DASH audio  128  M4A',
-        142 => 'DASH audio  256  M4A',
+         [ 92 => 'HLS  240  MP4', ],
+         [ 93 => 'HLS  360  MP4', ],
+         [ 94 => 'HLS  480  MP4', ],
+         [ 95 => 'HLS  720  MP4', ],
+         [ 96 => 'HLS 1080  MP4', ],
+        [ 132 => 'HLS  240  MP4', ],
+        [ 151 => 'HLS   72  MP4', ],
 
+        [ 139 => 'DASH audio   48  M4A', ],
+        [ 140 => 'DASH audio  128  M4A', ],
+        [ 141 => 'DASH audio  256  M4A', ],
 
-        133 => 'DASH video  240  MP4',
-        134 => 'DASH video  360  MP4',
-        135 => 'DASH video  480  MP4',
-        136 => 'DASH video  720  MP4',
-        137 => 'DASH video 1080  MP4',
-        138 => 'DASH video 2160  MP4',
+        [ 171 => 'DASH audio  128 WebM', ],
+        [ 172 => 'DASH audio  256 WebM', ],
 
-        160 => 'DASH video  144  MP4',
-        264 => 'DASH video 1440  MP4',
+        [ 133 => 'DASH video  240  MP4', ],
+        [ 134 => 'DASH video  360  MP4', ],
+        [ 135 => 'DASH video  480  MP4', ],
+        [ 136 => 'DASH video  720  MP4', ],
+        [ 137 => 'DASH video 1080  MP4', ],
+        [ 138 => 'DASH video 2160  MP4', ],
 
-        171 => 'DASH audio   48 WebM',
-        172 => 'DASH audio  256 WebM',
+        [ 160 => 'DASH video  144  MP4',],
+        [ 264 => 'DASH video 1440  MP4',],
+        [ 298 => 'DASH video  720  MP4 h264 60fps', ],
+        [ 299 => 'DASH video 1080  MP4 h264 60fps', ],
+        [ 266 => 'DASH video 2160  MP4 h264', ],
 
-        242 => 'DASH video  240 WebM',
-        243 => 'DASH video  360 WebM',
-        244 => 'DASH video  480 WebM',
-        245 => 'DASH video  480 WebM',
-        246 => 'DASH video  480 WebM',
-        247 => 'DASH video  720 WebM',
-        248 => 'DASH video 1080 WebM',
-        271 => 'DASH video 1440 WebM',
-        272 => 'DASH video 2160 WebM',
+        [ 167 => 'DASH video  360x640  WebM VP8', ],
+        [ 168 => 'DASH video  480x854  WebM VP8', ],
+        [ 169 => 'DASH video  720x1280 WebM VP8', ],
+        [ 170 => 'DASH video 1080x1920 WebM VP8', ],
+        [ 218 => 'DASH video  480x854  WebM VP8', ],
+        [ 219 => 'DASH video  480x854  WebM VP8', ],
 
-    };
+        [ 242 => 'DASH video  240 WebM', ],
+        [ 243 => 'DASH video  360 WebM', ],
+        [ 244 => 'DASH video  480 WebM', ],
+        [ 245 => 'DASH video  480 WebM', ],
+        [ 246 => 'DASH video  480 WebM', ],
+        [ 247 => 'DASH video  720 WebM', ],
+        [ 248 => 'DASH video 1080 WebM', ],
+        [ 271 => 'DASH video 1440 WebM', ],
+        [ 272 => 'DASH video 2160 WebM', ],
+
+        [ 278 => 'DASH video  144 WebM VP9', ],
+        [ 302 => 'DASH video  720 WebM VP9', ],
+        [ 303 => 'DASH video 1080 WebM VP9', ],
+    ];
 }
 
 
@@ -106,6 +121,8 @@ sub options {
     my $filename_len = "- Max filename length";
     my $len_kb_sec   = "- Digits 'k/s'";
     my $yt_video_dir = "- Video directory";
+    my $channel_hist = "- Channel history";
+    my $new_first    = "- Sort order";
     my %c_hash = (
         $help         => 'show_help_text',
         $show_path    => 'show_path',
@@ -121,6 +138,8 @@ sub options {
         $filename_len => 'max_len_f_name',
         $len_kb_sec   => 'kb_sec_len',
         $yt_video_dir => 'yt_video_dir',
+        $channel_hist => 'max_channels',
+        $new_first    => 'new_first',
     );
     my @choices = (
         $help,
@@ -137,6 +156,8 @@ sub options {
         $filename_len,
         $len_kb_sec,
         $yt_video_dir,
+        $channel_hist,
+        $new_first,
     );
     my $continue = '  ' . $opt->{continue};
     my $quit     = '  ' . $opt->{quit};
@@ -202,7 +223,13 @@ sub options {
             _opt_choose_from_list( $opt, $choice, $list );
         }
         elsif ( $choice eq "preferred" ) {
-            _opt_choose_a_list( $opt, $choice, map_fmt_to_quality(), _fmts_sorted() );
+            my ( $hash, $keys );
+            my $ref = map_fmt_to_quality();
+            for my $ar ( @$ref ) {
+                $hash->{$ar->[0]} = $ar->[1];
+                push @$keys, $ar->[0];
+            }
+            _opt_choose_a_list( $opt, $choice, $hash, $keys );
         }
         elsif ( $choice eq "retries" ) {
             my $prompt = 'Download retries';
@@ -236,6 +263,15 @@ sub options {
         elsif ( $choice eq "yt_video_dir" ) {
             my $prompt = 'Video directory';
             _opt_choose_a_directory( $opt, $choice, $prompt );
+        }
+        elsif ( $choice eq "max_channels" ) {
+            my $prompt = 'Channelhistory: save x channels. Disabled if x is 0';
+            my $digits = 3;
+            _opt_number_range( $opt, $choice, $prompt, 3 )
+        }
+        elsif ( $choice eq "new_first" ) {
+            my $prompt = 'Latest videos on top of the list';
+            _opt_yes_no( $opt, $choice, $prompt );
         }
         else { die $choice }
     }

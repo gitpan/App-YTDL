@@ -4,15 +4,11 @@ use strict;
 use ExtUtils::MakeMaker;
 
 
-my %prereqs_os_specific;
+my %prereqs_os_specific = ();
+
 if ( $^O eq 'MSWin32' ) {
     %prereqs_os_specific = (
         'Win32::Console::ANSI' => 0,
-    );
-}
-else {
-    %prereqs_os_specific = (
-        'Term::Twiddle'        => 0,
     );
 }
 
@@ -57,7 +53,7 @@ WriteMakefile(
         'LWP::UserAgent'         => 0,
         'Pod::Usage'             => 0,
         'Term::ANSIScreen'       => 0,
-        'Term::Choose'           => '1.116_01',
+        'Term::Choose'           => '1.117',
         'Term::Choose::Util'     => '0.016',
         'Term::ReadLine::Simple' => 0,
         'Text::LineFold'         => 0,

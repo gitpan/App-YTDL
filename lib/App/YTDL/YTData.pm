@@ -30,24 +30,23 @@ sub wrapper_get {
     my ( $opt, $info, $url ) = @_;
     my $show_progress = 1;
     my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, timeout => $opt->{timeout}, show_progress => $show_progress );
-    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
-    my $choice;
     my $res;
-    while ( 1 ) {
-        $choice = $continue;
+    my $count = 1;
+    RETRY: while ( 1 ) {
+        my $not_ok;
         try {
             $res = $ua->get( $url );
             die $res->status_line, ': ', $url if ! $res->is_success;
         }
         catch {
-            my $prompt = "\n$_\n";
-            $choice = choose(
-                [ undef, $retry, $continue ],
-                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
-            );
+            if ( $count > $opt->{retries} ) {
+                return;
+            }
+            say "$count/$opt->{retries}  $_";
+            $count++;
+            $not_ok = 1;
         };
-        exit if ! $choice;
-        redo if $choice eq $retry;
+        next RETRY if $not_ok;
         return $res;
     }
 }
@@ -62,25 +61,15 @@ sub get_new_video_url {
     push @cmd, '--socket-timeout', $opt->{timeout};
     #push @cmd, '-v';
     push @cmd, '--format', $fmt, '--get-url', '--', $video_id;
-    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
-    my $choice;
     my $video_url;
-    while ( 1 ) {
-        $choice = $continue;
-        try {
-            $video_url = capture( @cmd );
-        }
-        catch {
-            my $prompt = "\n$_\n";
-            $choice = choose(
-                [ undef, $retry, $continue ],
-                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
-            );
-        };
-        exit if ! $choice;
-        redo if $choice eq $retry;
-        return $video_url;
+    try {
+        $video_url = capture( @cmd );
     }
+    catch {
+        say $_;
+        $video_url = undef;
+    };
+    return $video_url;
 }
 
 
@@ -94,48 +83,28 @@ sub get_data {
     push @cmd, '--dump-json', '--', $video_id;
     my $capture;
     my $message = "** GET download info: ";
-    my $spinner;
-    try {
-        require Term::Twiddle;
-        $spinner = Term::Twiddle->new();
-    }
-    catch {
-        $spinner = undef;
-    };
-    my ( $retry, $continue ) = ( 'Retry', 'Continue' );
-    my $choice;
-
-    while ( 1 ) {
-        $choice = $continue;
+    my $count = 1;
+    RETRY: while ( 1 ) {
+        my $not_ok;
         try {
-            if ( $spinner ) {
-                print HIDE_CURSOR;
-                print $message;
-                $spinner->thingy( [ "[\\]", "[|]", "[/]", "[-]" ] );
-                $spinner->start;
-                $capture = capture( @cmd );
-                $spinner->stop;
-                print "\r", clline;
-                print $message . "done.\n";
-                print SHOW_CURSOR;
-            }
-            else {
-                print $message . "...";
-                $capture = capture( @cmd );
-                print "\r", clline;
-                print $message . "done.\n";
-            }
+            print HIDE_CURSOR;
+            print $message . '...';
+            $capture = capture( @cmd );
+            print "\r", clline;
+            print $message . "done.\n";
+            print SHOW_CURSOR;
+            die if ! defined $capture;
         }
         catch {
-            $spinner->stop if $spinner;
-            my $prompt = "\n$_\n";
-            $choice = choose(
-                [ undef, $retry, $continue ],
-                { prompt => $prompt, layout => 3, clear_screen => 0, undef => 'Exit' }
-            );
+            say "$count/$opt->{retries}  $_";
+            $count++;
+            $not_ok = 1;
         };
-        exit if ! $choice;
-        redo if $choice eq $retry;
+        if ( $count > $opt->{retries} ) {
+            push @{$opt->{error_get_download_infos}}, $video_id;
+            return $info;
+        }
+        next RETRY if $not_ok;
         last;
     }
     $opt->{up}++; ##
@@ -154,8 +123,8 @@ sub get_data {
     my $tmp = {};
     for my $json ( @json ) {
         my $h_ref = decode_json( $json );
-        my $fmt_list;
-        my $formats;
+        my $fmt_list = [];
+        my $formats  = {};
         for my $format ( @{$h_ref->{formats}} ) {
             my $format_id = $format->{format_id};           # fmt
             push @$fmt_list, $format_id;
@@ -175,7 +144,7 @@ sub get_data {
             id              => $h_ref->{id},
             #age_limit       => $h_ref->{age_limit},
             #annotations     => $h_ref->{annotations},
-            author          => $h_ref->{uploader},          # author user
+            author_raw      => $h_ref->{uploader},          # author user
             categories      => $h_ref->{categories},
             channel_id      => $h_ref->{uploader_id},       # channel_id
             description     => $h_ref->{description},
@@ -216,11 +185,11 @@ sub get_data {
 sub choose_from_list_and_add_to_info {
     my ( $opt, $info, $tmp, $ids ) = @_;
     my $regexp;
-    my $back   = '<<';
     my $ok     = '-OK-';
     my $close  = 'CLOSE';
     my $filter = '     FILTER';
-    my $menu   = '       MENU';
+    my $back   = '       BACK | 0:00:00';
+    my $menu   = 'Your choice:';
     my %chosen_video_ids;
     my @last_chosen_video_ids = ();
 
@@ -231,26 +200,29 @@ sub choose_from_list_and_add_to_info {
         my @tmp_video_ids;
         my $index = $#pre;
         my $mark = [];
-        my @video_ids = sort {    ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' )
+        my @video_ids = sort {
+            ( $opt->{new_first} ? ( $tmp->{$b}{published} // '' ) cmp ( $tmp->{$a}{published} // '' )
+                                : ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' ) )
                                || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } @$ids;
 
-        VIDEO_ID: for my $video_id ( @video_ids ) {
 
+        VIDEO_ID:
+        for my $video_id ( @video_ids ) {
             ( my $title = $tmp->{$video_id}{title} ) =~ s/\s+/ /g;
             $title =~ s/^\s+|\s+\z//g;
             if ( length $regexp && $title !~ /$regexp/i ) {
                 next VIDEO_ID;
             }
-
             push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{published}, $title;
             push @tmp_video_ids, $video_id;
             $index++;
             push @$mark, $index if any { $video_id eq $_ } keys %chosen_video_ids;
         }
-        my $choices = [ @pre, @video_print_list ];
+        my $choices = [ @pre, @video_print_list, undef ];
         my @idx = choose(
             $choices,
-            { prompt => 'Your choice: ', layout => 3, index => 1, clear_screen => 1, mark => $mark, no_spacebar => [ 0 .. $#pre ] }
+            { prompt => '', layout => 3, index => 1, default => 1, clear_screen => 1, mark => $mark,
+              undef => $back, no_spacebar => [ 0 .. $#pre, $#$choices ] }
         );
         return if ! defined $idx[0];
         my $choice = $choices->[$idx[0]];
@@ -258,7 +230,7 @@ sub choose_from_list_and_add_to_info {
             shift @idx;
             my $menu_choice = choose(
                 [ undef, $ok, $close ],
-                { prompt => 'Your choice: ', layout => 0, default => 0, undef => $back }
+                { prompt => 'Choice: ', layout => 0, default => 0, undef => '<<' }
             );
             if ( ! defined $menu_choice ) {
                 if ( length $regexp ) {
@@ -346,12 +318,17 @@ sub _prepare_info_hash {
             $info->{$video_id}{published} = $info->{$video_id}{published_raw};
         }
     }
+    if ( $info->{$video_id}{author_raw} ) {
+        $info->{$video_id}{author} = $info->{$video_id}{author_raw};
+    }
     if ( $info->{$video_id}{channel_id} ) {
         if ( ! $info->{$video_id}{author} ) {
             $info->{$video_id}{author} = $info->{$video_id}{channel_id};
         }
-        elsif ( $info->{$video_id}{author} ne $info->{$video_id}{channel_id} ) {
-            $info->{$video_id}{author} .= ' (' . $info->{$video_id}{channel_id} . ')';
+        else {
+            if ( $info->{$video_id}{author} ne $info->{$video_id}{channel_id} ) {
+                $info->{$video_id}{author} .= ' (' . $info->{$video_id}{channel_id} . ')';
+            }
         }
     }
     if ( $info->{$video_id}{like_count} && $info->{$video_id}{dislike_count} ) {

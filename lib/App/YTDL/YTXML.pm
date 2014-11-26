@@ -82,7 +82,7 @@ sub entry_node_to_info_hash {
     my $author_uri  = $xpc->findvalue( './xmlns:author/xmlns:uri' );
     my $updated     = $xpc->findvalue( './xmlns:updated' );
     $info->{$video_id} = {
-        author          => $author,
+        author_raw      => $author,
         author_uri      => $author_uri,
         avg_rating      => $avg_rating,
         content         => $content,
@@ -119,6 +119,9 @@ sub _prepare_info_hash {
         else {
             $info->{$video_id}{published} = '0000-00-00';
         }
+    }
+    if ( $info->{$video_id}{author_raw} ) {
+        $info->{$video_id}{author} = $info->{$video_id}{author_raw};
     }
     if ( $info->{$video_id}{author_uri} =~ m|/users/([^$opt->{invalid_char}]+)| ) {
         $info->{$video_id}{channel_id} = $1;

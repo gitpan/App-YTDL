@@ -10,9 +10,8 @@ our @EXPORT_OK = qw( get_download_infos );
 
 use Encode                qw( decode_utf8 );
 use File::Spec::Functions qw( catfile );
-use List::Util            qw( max );
 
-use List::MoreUtils   qw( any );
+use List::MoreUtils   qw( any first_index );
 use Term::ANSIScreen  qw( :cursor :screen );
 use Term::Choose      qw( choose );
 use Text::LineFold    qw();
@@ -27,13 +26,6 @@ use App::YTDL::YTConfig    qw( map_fmt_to_quality );
 use App::YTDL::YTData      qw( get_data wrapper_get );
 use App::YTDL::YTXML       qw( xml_to_entry_node );
 use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
-
-use constant {
-    QUIT   => -1,
-    DELETE => -2,
-    APPEND => -3,
-    REDO   => -4,
-};
 
 
 sub get_download_infos {
@@ -53,115 +45,142 @@ sub get_download_infos {
     my $fmt;
     my $count = 0;
     $opt->{up} = 0;
+
     VIDEO:
     while ( @video_ids ) {
         my $video_id = shift @video_ids;
-        my ( $print_array, $key_len, $failed );
-        try {
-            $info = _get_print_info( $opt, $info, $video_id ) if $info->{$video_id}{youtube};
-            ( $info, $print_array, $key_len ) = _format_print_info( $opt, $info, $video_id );
-            print "\n";
-            $opt->{up}++;
-            binmode STDOUT, ':pop';
-            print for map { encode_stdout_lax( $_ ) } @$print_array;
-            binmode STDOUT, ':encoding(console_out)';
-            $opt->{up} += @$print_array;
-            print "\n";
-            $opt->{up}++;
-        }
-        catch {
-            say "$video_id - $_";
-            choose( [ 'Press ENTER' ], { prompt => '' } );
-            delete  $info->{$video_id};
-            $failed = 1;
-        };
-        next VIDEO if $failed;
+        my ( $print_array, $col_max, $key_len );
+        $count++;
         if ( $info->{$video_id}{youtube} ) {
-            my $status = $info->{$video_id}{status};
-            if ( ! defined $status || $status ne 'ok' ) {
-                _status_not_ok( $opt, $info, $video_id );
-                next VIDEO;
-            }
+            $info = _get_yt_print_info( $opt, $info, $video_id );
         }
-        try { #
-            my $edit;
-            ( $info, $fmt, $edit ) = _choose_quality( $opt, $info, $fmt, $video_id );
-            print up( $opt->{up} ), cldown;
-            $opt->{up} = 0;
-            if ( defined $edit ) {
-                if ( $edit == QUIT ) {
-                    print locate( 1, 1 ), cldown;
-                    say "Quit";
-                    exit;
-                }
-                if ( $edit == DELETE ) {
-                    delete  $info->{$video_id};
-                    if ( ! @video_ids ) {
-                        print up( 2 ), cldown;
-                        print "\n";
-                    }
-                }
-                push    @video_ids, $video_id if $edit == APPEND;
-                unshift @video_ids, $video_id if $edit == REDO;
-            }
-            else {
-                $info->{$video_id}{video_url} = $info->{$video_id}{fmt_to_info}{$fmt}{url};
-                $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, _get_filename( $opt, $info, $fmt, $video_id ) );
-                $info->{$video_id}{count}     = ++$count;
-                $info->{$video_id}{fmt}       = $fmt;
-                $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
-                unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
+        ( $info, $print_array, $col_max, $key_len ) = _prepare_print_info( $opt, $info, $video_id );
+        print "\n";
+        $opt->{up}++;
+        binmode STDOUT, ':pop';
+        print for map { encode_stdout_lax( $_ ) } @$print_array;
+        binmode STDOUT, ':encoding(console_out)';
+        $opt->{up} += @$print_array;
+        print "\n";
+        $opt->{up}++;
+        if ( $info->{$video_id}{youtube} ) {
+            if ( defined $info->{$video_id}{status} && $info->{$video_id}{status} ne 'ok' ) {
+                my $status_not_ok_array = _status_not_ok( $opt, $info, $video_id, $col_max, $key_len );
+                splice @$print_array, 1, 0, @$status_not_ok_array;
+                print up( $opt->{up} ), cldown;
+                $opt->{up} = 0;
+                unshift @$print_array, sprintf "%*.*s : %s  %s\n", $key_len, $key_len, 'video', $count, 'Status NOT OK!';
                 binmode STDOUT, ':pop';
                 print for map { encode_stdout_lax( $_ ) } @$print_array;
                 binmode STDOUT, ':encoding(console_out)';
                 print "\n";
+                next VIDEO;
             }
         }
-        catch {
-            say "$video_id - $_";
-            choose( [ 'Press ENTER' ], { prompt => '' } );
-            delete  $info->{$video_id};
-        };
+        $fmt = _fmt_quality( $opt, $info, $fmt, $video_id );
+        print up( $opt->{up} ), cldown;
+        $opt->{up} = 0;
+        if ( ! defined $fmt ) {
+            my ( $delete, $append, $redo ) = ( 'Delete', 'Append', 'Redo' );
+            # Choose
+            my $choice = choose(
+                [ undef, $delete, $append, $redo ],
+                { prompt => 'Your choice: ', undef => $opt->{quit} }
+            );
+            if ( ! defined $choice ) {
+                print locate( 1, 1 ), cldown;
+                say "Quit";
+                exit;
+            }
+            elsif ( $choice eq $delete ) {
+                delete  $info->{$video_id};
+                if ( ! @video_ids ) {
+                    print up( 2 ), cldown;
+                    print "\n";
+                }
+            }
+            elsif ( $choice eq $append ) {
+                push @video_ids, $video_id;
+            }
+            elsif ( $choice eq $redo ) {
+                unshift @video_ids, $video_id;
+            }
+            next VIDEO;
+        }
+        else {
+            $info->{$video_id}{video_url} = $info->{$video_id}{fmt_to_info}{$fmt}{url};
+            $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, _get_filename( $opt, $info, $fmt, $video_id ) );
+            $info->{$video_id}{count}     = $count;
+            $info->{$video_id}{fmt}       = $fmt;
+            if ( $opt->{max_channels} ) {
+                my $i = first_index { $info->{$video_id}{channel_id} eq ( ( split /,/, $_ )[1] ) } @{$opt->{channel_history}};
+                if ( $i > -1 ) {
+                    splice @{$opt->{channel_history}}, $i, 1;
+                }
+                push @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{author_raw}, $info->{$video_id}{channel_id};
+            }
+            $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
+            unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
+            binmode STDOUT, ':pop';
+            print for map { encode_stdout_lax( $_ ) } @$print_array;
+            binmode STDOUT, ':encoding(console_out)';
+            print "\n";
+        }
     }
     print "\n";
-    return $info, $count;
+    if ( $opt->{max_channels} ) {
+        while ( @{$opt->{channel_history}} > $opt->{max_channels} ) {
+            shift @{$opt->{channel_history}};
+        }
+        open my $fh, '>', $opt->{c_history_file} or die $!;
+        for my $line ( @{$opt->{channel_history}} ) {
+            say $fh $line;
+        }
+        close $fh;
+    }
+    $opt->{total_nr_videos} = $count;
+    if ( ! $opt->{total_nr_videos} ) {
+        print locate( 1, 1 ), cldown;
+        say "No videos";
+        exit;
+    }
+    return $opt, $info;
 }
 
 
 sub _status_not_ok {
-    my ( $opt, $info, $video_id ) = @_;
-    $info->{$video_id}{status} //= 'undefined';
-    my @keys    = ( 'title', 'video_id', 'status', 'errorcode', 'reason' );
-    my $key_len = 10;
+    my ( $opt, $info, $video_id, $col_max, $key_len ) = @_;
+    my @keys    = ( 'status', 'errorcode', 'reason' );
     my $s_tab   = $key_len + length( ' : ' );
-    my $maxcols =  ( term_size() )[0] - $opt->{right_margin};
-    my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
     my $lf = Text::LineFold->new( %{$opt->{linefold}} );
     $lf->config( 'ColMax', $col_max );
-    my $prompt = '  Status NOT OK!' . "\n\n";
-    my $print_array;
+    my $status_not_ok_array;
     for my $key ( @keys ) {
         next if ! $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\n+/\n/g;
         $info->{$video_id}{$key} =~ s/^\s+//;
         ( my $kk = $key ) =~ s/_/ /g;
         my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-        $prompt .= $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
+        my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
+        $text =~ s/\R+\z//;
+        for my $val ( split /\R+/, $text ) {
+            push @$status_not_ok_array, $val . "\n";
+        }
     }
-    choose( [ 'Press ENTER' ], { prompt => $prompt } );
+    push @{$opt->{download_status_not_ok}}, $video_id . ' - ' . $info->{$video_id}{title};
     delete $info->{$video_id};
-    print up( $opt->{up} ), cldown;
-    $opt->{up} = 0;
+    return $status_not_ok_array;
 }
 
 
-sub _get_print_info {
+sub _get_yt_print_info {
     my ( $opt, $info, $video_id ) = @_;
     $info = get_data( $opt, $info, $video_id );
     my $info_url = URI->new( 'https://www.youtube.com/get_video_info' );
     $info_url->query_form( 'video_id' => $video_id );
     my $res = wrapper_get( $opt, $info, $info_url->as_string );
-    $opt->{up}++; ###
+    return $info if ! defined $res; ###
+    $opt->{up}++;
     for my $item ( split /&/, $res->decoded_content ) {
         my ( $key, $value ) = split /=/, $item;
         if ( defined $value && $key =~ /^(?:title|keywords|reason|status)\z/ ) {
@@ -174,13 +193,13 @@ sub _get_print_info {
 }
 
 
-sub _format_print_info {
+sub _prepare_print_info {
     my ( $opt, $info, $video_id ) = @_;
     my @keys = ( qw( title video_id ) );
     push @keys, 'extractor' if ! $info->{$video_id}{youtube};
     push @keys, qw( author duration raters avg_rating view_count published content description keywords );
     for my $key ( @keys ) {
-        next if ! defined $info->{$video_id}{$key};
+        next if ! $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\R/ /g;
     }
     my $key_len = 13;
@@ -192,7 +211,7 @@ sub _format_print_info {
     $lf->config( 'ColMax', $col_max );
     my $print_array;
     for my $key ( @keys ) {
-        next if ! $info->{$video_id}{$key};
+        next if ! length $info->{$video_id}{$key};
         $info->{$video_id}{$key} =~ s/\n+/\n/g;
         $info->{$video_id}{$key} =~ s/^\s+//;
         ( my $kk = $key ) =~ s/_/ /g;
@@ -219,7 +238,7 @@ sub _format_print_info {
             $lf->config( 'ColMax', $col_max );
             $print_array = [];
             for my $key ( @keys ) {
-                next if ! $info->{$video_id}{$key};
+                next if ! length $info->{$video_id}{$key};
                 ( my $kk = $key ) =~ s/_/ /g;
                 my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
                 my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
@@ -234,7 +253,7 @@ sub _format_print_info {
             $lf->config( 'ColMax', $col_max );
             $print_array = [];
             for my $key ( @keys ) {
-                next if ! $info->{$video_id}{$key};
+                next if ! length $info->{$video_id}{$key};
                 ( my $kk = $key ) =~ s/_/ /g;
                 my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
                 my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
@@ -245,7 +264,7 @@ sub _format_print_info {
             }
         }
     }
-    return $info, $print_array, $key_len;
+    return $info, $print_array, $col_max, $key_len;
 }
 
 
@@ -268,133 +287,86 @@ sub _get_filename {
 }
 
 
-sub _choose_quality {
+
+sub _fmt_quality {
     my ( $opt, $info, $fmt, $video_id ) = @_;
-    my @avail_fmts = @{$info->{$video_id}{fmt_list}};
-    if ( ! @avail_fmts ) {
-        my $ref = map_fmt_to_quality;
-        for my $fmt ( sort keys %$ref ) {
-            push @avail_fmts, $fmt if $info->{$video_id}{fmt_to_info}{$fmt}{url};
-        }
-        if ( ! @avail_fmts ) {
-            my $prompt = 'video_id ' . $video_id . ': Error in fetching available fmts.' . "\n";
-            $prompt .= 'Skipping video "' . $info->{$video_id}{title} . '".';
-            choose( [ 'Press Enter to continue' ], { prompt => $prompt } );
-            $fmt = DELETE;
-            return $info, $fmt;
-        }
-    }
-    my $skip_pq = $opt->{auto_quality} == 3 && ! $info->{$video_id}{youtube} ? 1 : 0;
-    my ( $fmt_ok, $edit );
-    if ( $opt->{auto_quality} == 4 ) {
-        if ( defined $info->{$video_id}{default_fmt} ) {
-            $fmt = $info->{$video_id}{default_fmt};
-            $fmt_ok = 1;
-        }
-    }
-    elsif ( $opt->{auto_quality} == 3 ) {
-        my @pref_qualities = @{$opt->{preferred}//[]};
-        if ( ! @pref_qualities ) {
-            print "\n";
-            $opt->{up}++;
-            say 'video_id: ' . $video_id . ' - no preferred qualities found!';
-            $opt->{up}++;
+    my $auto_quality = $opt->{auto_quality};
+    $auto_quality = 2 if $auto_quality == 3 && ! $info->{$video_id}{youtube};
+    my $fmt_ok;
+    if ( $auto_quality == 1 && $info->{$video_id}{list_id} ) {
+        my $aq = $info->{$video_id}{list_id};
+        if ( ! defined $opt->{$aq} ) {
+            $fmt = _choose_fmt( $opt, $info, $video_id );
+            return if ! defined $fmt;
+            $opt->{$aq} = $fmt;
         }
         else {
-            for my $pq ( @pref_qualities ) {
-                if ( any{ $pq eq $_ } @avail_fmts ) {
-                    $fmt = $pq;
-                    $fmt_ok = 1;
-                    last;
-                }
-            }
-            if ( ! $fmt_ok ) {
-                print "\n";
-                $opt->{up}++;
-                say 'video_id: ' . $video_id . ' - no matches between preferred fmts and available fmts!';
-                $opt->{up}++;
-            }
+            $fmt = $opt->{$aq};
         }
+        $fmt_ok = 1;
     }
-    elsif ( $opt->{auto_quality} == 2 || $skip_pq ) {
+    elsif ( $auto_quality == 2 ) {
         if ( ! defined $opt->{aq} ) {
-            ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
-            $opt->{aq} = $fmt if $fmt >= 0;
-            $fmt_ok = 1;
+            $fmt = _choose_fmt( $opt, $info, $video_id );
+            return if ! defined $fmt;
+            $opt->{aq} = $fmt;
         }
-        elsif ( any{ $_ eq $opt->{aq} } @avail_fmts ) {
+        else {
             $fmt = $opt->{aq};
-            $fmt_ok = 1;
+        }
+        $fmt_ok = 1;
+    }
+    elsif ( $auto_quality == 3 ) {
+        my @pref_qualities = @{$opt->{preferred}//[]};
+        for my $pq ( @pref_qualities ) {
+            if ( any { $pq eq $_ } @{$info->{$video_id}{fmt_list}} ) {
+                $fmt = $pq;
+                $fmt_ok = 1;
+                last;
+            }
+        }
+        if ( ! $fmt_ok ) {
+            print "\n";
+            $opt->{up}++;
+            say 'video_id: ' . $video_id .
+                ! @pref_qualities
+                ? ' - no preferred qualities found!'
+                : ' - no matches between preferred fmts and available fmts!';
+            $opt->{up}++;
         }
     }
-    elsif ( $opt->{auto_quality} == 1 ) {
-        if ( $info->{$video_id}{list_id} ) {
-            my $aq = $info->{$video_id}{list_id};
-            if ( ! defined $opt->{$aq} ) {
-                ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
-                if ( defined $fmt ) {
-                    $opt->{$aq} = $fmt;
-                    $fmt_ok = 1;
-                }
-            }
-            elsif ( any{ $_ eq $opt->{$aq} } @avail_fmts ) {
-                $fmt = $opt->{$aq};
-                $fmt_ok = 1;
-            }
-        }
+    elsif ( $auto_quality == 4 && defined $info->{$video_id}{default_fmt} ) {
+        $fmt = $info->{$video_id}{default_fmt};
+        $fmt_ok = 1;
     }
     if ( ! $fmt_ok ) {
-        ( $fmt, $edit ) = _set_fmt( $opt, $info, $video_id );
+        $fmt = _choose_fmt( $opt, $info, $video_id );
+        return if ! defined $fmt;
     }
-    if ( ! defined $edit && ! $info->{$video_id}{fmt_to_info}{$fmt}{url} ) {
-        my $prompt = 'video_id "' . $video_id . '": fmt ' . $fmt . ' not supported.';
-        choose( [ 'Press ENTER to continue' ], { prompt => $prompt } );
-        $edit = DELETE;
-    }
-    return $info, $fmt, $edit;
+    return $fmt;
 }
 
 
-sub _set_fmt {
+sub _choose_fmt {
     my ( $opt, $info, $video_id ) = @_;
     my ( @choices, @format_ids );
-    if ( $info->{$video_id}{youtube} ) {
-        for my $fmt ( sort { $a <=> $b } @{$info->{$video_id}{fmt_list}} ) {
-            push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
-            push @format_ids, $fmt;
-        }
-    }
-    else {
-        for my $fmt ( sort @{$info->{$video_id}{fmt_list}} ) {
-            push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
-            push @format_ids, $fmt;
-        }
+    for my $fmt ( $info->{$video_id}{youtube} ? sort( { $a <=> $b }  @{$info->{$video_id}{fmt_list}} )
+                                              : sort( { $a cmp $b }  @{$info->{$video_id}{fmt_list}} ) ) {
+        push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
+        push @format_ids, $fmt;
     }
     my @pre = ( undef );
     print "\n";
     $opt->{up}++;
+    # Choose
     my $fmt_res_idx = choose(
         [ @pre, @choices ],
         { prompt => 'Your choice: ', index => 1, order => 0, undef => 'Menu' }
     );
-    my $fmt;
-    my $edit;
-    if ( ! $fmt_res_idx ) {
-        my ( $delete, $append, $redo ) = ( 'Delete', 'Append', 'Redo' );
-        my $choice = choose(
-            [ undef, $delete, $append, $redo ],
-            { prompt => 'Your choice: ', undef => $opt->{quit} }
-        );
-        $edit = QUIT   if ! defined $choice;
-        $edit = DELETE if $choice eq $delete;
-        $edit = APPEND if $choice eq $append;
-        $edit = REDO   if $choice eq $redo;
-    }
-    else {
-        $fmt_res_idx--;
-        $fmt = $format_ids[$fmt_res_idx];
-    }
-    return $fmt, $edit;
+    return if ! $fmt_res_idx;
+    $fmt_res_idx -= @pre;
+    my $fmt = $format_ids[$fmt_res_idx];
+    return $fmt;
 }
 
 

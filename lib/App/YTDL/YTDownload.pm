@@ -20,7 +20,6 @@ use Try::Tiny        qw( try catch );
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
 use App::YTDL::YTData      qw( get_new_video_url );
-use App::YTDL::YTInfo      qw( get_download_infos );
 use App::YTDL::GenericFunc qw( sec_to_time insert_sep encode_fs encode_stdout );
 
 use constant {
@@ -33,18 +32,12 @@ END { print SHOW_CURSOR }
 
 sub download_youtube {
     my ( $opt, $info ) = @_;
-    ( $info, my $total_nr ) = get_download_infos( $opt, $info );
-    if ( $total_nr == 0 ) {
-        print locate( 1, 1 ), cldown;
-        say "No videos";
-        return;
-    }
     my $ua = LWP::UserAgent->new( agent => $opt->{useragent}, show_progress => 0 );
     for my $video_id ( sort { $info->{$a}{count} <=> $info->{$b}{count} } keys %$info ) {
         try {
             my $file_name_OS = encode_fs( $info->{$video_id}{file_name} );
             unlink $file_name_OS or die $! if -f $file_name_OS && $opt->{overwrite};
-            _download_video( $opt, $info, $ua, $total_nr, $video_id );
+            _download_video( $opt, $info, $ua, $video_id );
         }
         catch {
             say "$video_id - $_";
@@ -55,7 +48,7 @@ sub download_youtube {
 
 
 sub _download_video {
-    my ( $opt, $info, $ua, $total_nr, $video_id ) = @_;
+    my ( $opt, $info, $ua, $video_id ) = @_;
     my $nr            = $info->{$video_id}{count};
     my $video_url     = $info->{$video_id}{video_url};
     my $file_name     = $info->{$video_id}{file_name};
@@ -72,16 +65,18 @@ sub _download_video {
         exit( 1 );
     };
     my $p = {};
-    TRY: for my $try ( 1 .. $opt->{retries} ) {
-        say '  -'  if $try > 1;
+    my $try = 1;
+    RETRY: while ( 1 ) {
         $p->{size}      = -s $file_name_OS // 0;
         $p->{starttime} = gettimeofday;
         my $retries     = $try == 1 ? '   ' : "$try/$opt->{retries}";
-        my $video_count = "$nr from $total_nr";
+        my $tvl = length $opt->{total_nr_videos};
+        my $video_count = sprintf "%${tvl}s from %s", $nr, $opt->{total_nr_videos};
+        my $at = '';
         my $res;
         if ( ! $p->{size} ) {
             open my $fh, '>:raw', $file_name_OS or die $!;
-            printf _p_fmt( $opt, "start" ), $video_count, $retries, '';
+            printf _p_fmt( $opt, "start" ), $video_count, $retries, $at;
             _log_info( $opt, $info, $video_id ) if $opt->{log_info};
             $res = $ua->get(
                 $video_url,
@@ -90,8 +85,9 @@ sub _download_video {
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
+            $at = sprintf "@%.2fM", $p->{size} / 1024 ** 2;
             open my $fh, '>>:raw', $file_name_OS or die $!;
-            printf _p_fmt( $opt, "start" ), $video_count, $retries, sprintf "@ %.2f M", $p->{size} / 1024 ** 2;
+            printf _p_fmt( $opt, "start" ), $video_count, $retries, $at;
             $res = $ua->get(
                 $video_url,
                 'Range'       => "bytes=$p->{size}-",
@@ -99,44 +95,62 @@ sub _download_video {
             );
             close $fh or die $!;
         }
+        print up;
         print cldown;
         my $status = $res->code;
+        my $pr_status = 'status ' . $status;
         my $dl_time = sec_to_time( int( tv_interval( [ $p->{starttime} ] ) ), 1 );
+        my $avg_speed = '';
+        my $size = '';
+        my $incomplete = '';
         if ( $status =~ /^(200|206|416)/ ) {
-            my $size_avg_speed = '';
             my $file_size = -s $file_name_OS // -1;
             if ( $p->{total} ) {
                 if ( $file_size != $p->{total} ) {
-                    $size_avg_speed .= sprintf " Incomplete: %s/%s ", insert_sep( $file_size ), insert_sep( $p->{total} );
-                    $size_avg_speed .= sprintf "   avg %2sk/s", $p->{kbs_avg} if $p->{kbs_avg};
+                    $retries = "$try/$opt->{retries}";
+                    my $pr_total = insert_sep( $p->{total} );
+                    my $l = length( $pr_total );
+                    $size = sprintf "%7.2fM", $file_size / 1024 ** 2;
+                    $incomplete = sprintf " Incomplete: %${l}s/%s ", insert_sep( $file_size ), $pr_total;
                 }
                 elsif ( $status =~ /^20[06]\z/ ) {
-                    $size_avg_speed .= sprintf " %7.2f M   avg %2sk/s", $p->{total} / 1024 ** 2, $p->{kbs_avg} || '--';
+                    $size = sprintf "%7.2fM", $p->{total} / 1024 ** 2;
                 }
+                $avg_speed = sprintf "avg %sk/s", $p->{kbs_avg} || '--';
             }
-            if ( $status == 200 ) {
-                printf _p_fmt( $opt, "status" ), $dl_time, '', '', $size_avg_speed;
+            $pr_status = '' if $status == 200;
+            if ( $status == 416 ) {
+                $dl_time = '';
+                $at = sprintf "%.2fM", $p->{size} / 1024 ** 2;
+                printf _p_fmt( $opt, "status_416" ), $video_count, $retries, $dl_time, $at, $pr_status;
             }
             else {
-                printf _p_fmt( $opt, "status" ), $dl_time, 'status', $status, $size_avg_speed;
+                printf _p_fmt( $opt, "status" ), $video_count, $retries, $dl_time, $size, $avg_speed, $at, $pr_status, $incomplete;
             }
-            last TRY if $p->{total} && $p->{total} == $file_size;
-            last TRY if $status == 416;
+            last RETRY if $p->{total} && $p->{total} == $file_size;
+            last RETRY if $status == 416;
         }
         else {
-            printf _p_fmt( $opt, "status" ), $dl_time, 'status', $status, 'Trying to get a new video url ...';
+            $retries = "$try/$opt->{retries}";
+            $pr_status = 'status ' . $status . '  Fetching new video url ...';
             my $new_video_url = get_new_video_url( $opt, $info, $video_id );
             if ( ! $new_video_url ) {
-                die 'Fetching new video url: failed!';
+                $pr_status .=  ' failed!';
             }
-            if ( $new_video_url eq $video_url ) {
-                die $res->status_line, ' : ', $video_url;
+            elsif ( $new_video_url eq $video_url ) {
+                $pr_status .= $res->status_line;
             }
             else {
                 $video_url = $new_video_url;
             }
+            printf _p_fmt( $opt, "status" ), $video_count, $retries, $dl_time, $size, $avg_speed, $at, $pr_status, $incomplete;
         }
-        sleep 5 * $try;
+        $try++;
+        if ( $try > $opt->{retries} ) {
+            push @{$opt->{incomplete_download}}, $video_url;
+            last RETRY;
+        }
+        sleep 3 * $try;
     }
     print SHOW_CURSOR;
     return;
@@ -163,8 +177,9 @@ sub _log_info {
 sub _p_fmt {
     my ( $opt, $key ) = @_;
     my %hash = (
-        start        => "  %s   %s   %s\n",
-        status       => "  %s  %6s %3s  %s\n",
+        start        => "  %s  %3s  %9s\n", ###
+        status_416   => "  %s  %3s  %7s  %9s   %s\n",
+        status       => "  %s  %3s  %7s  %9s  %s  %s    %s  %s\n",
         info_row1    => "%9.*f %s %37s %"    . (      $opt->{kb_sec_len} ) . "sk/s\n",
         info_row2    => "%9.*f %s %6.*f%% %" . ( 30 + $opt->{kb_sec_len} ) . "sk/s\n",
         info_nt_row1 => " %34s %24sk/s\n",
@@ -189,7 +204,7 @@ sub _return_callback {
         $p->{total} = $res->header( 'Content-Length' ) // 0;
         if ( $download > 0 && $inter > 2 ) {
             $p->{kbs_avg} = ( $download / 1024 ) / tv_interval[ $p->{starttime} ];
-            $eta = sec_to_time( int( ( $p->{total} - $download ) / ( $p->{kbs_avg} * 1024 ) ) );
+            $eta = sec_to_time( int( ( $p->{total} - $download ) / ( $p->{kbs_avg} * 1024 ) ), 1 );
             $p->{kbs_avg} = int( $p->{kbs_avg} );
             $eta = undef if ! $p->{kbs_avg};
             $kbs = int( ( $chunk_size / 1024 ) / $inter );

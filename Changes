@@ -1,6 +1,13 @@
 Revision history for App-YTDL
 
 
+0.021   2014-11-26
+        - New option "Channel history".
+        - New option "Sort order".
+        - Code refactoring.
+        - "Term::Choose" minimum version is "1.117".
+        - Update documentation.
+
 0.020_01   2014-11-01
         - Don't reset the previous selected videos if "FILTER" is called.
         - "Term::Choose" minimum version is "1.116_01".

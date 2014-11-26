@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.020_01';
+our $VERSION = '0.021';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -26,6 +26,7 @@ print "\e(U" if $^O eq 'MSWin32';
 use App::YTDL::YTConfig    qw( read_config_file options );
 use App::YTDL::YTData      qw( get_data choose_from_list_and_add_to_info wrapper_get );
 use App::YTDL::YTDownload  qw( download_youtube );
+use App::YTDL::YTInfo      qw( get_download_infos );
 use App::YTDL::YTXML       qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::GenericFunc qw( encode_fs );
 
@@ -51,7 +52,7 @@ else {
     $config_dir = catdir $my_home || curdir, '.yt_download';
 }
 
-mkdir $config_dir  or die $! if ! -d $config_dir;
+mkdir $config_dir or die $! if ! -d $config_dir;
 
 my $opt = {
     back           => 'BACK',
@@ -64,6 +65,7 @@ my $opt = {
     yt_video_dir    => $yt_video_dir,
     config_file    => catfile( $config_dir, 'yt_config.txt' ),
     log_file       => catfile( $config_dir, 'yt_download.log' ),
+    c_history_file => catfile( $config_dir, 'yt_channel_history.txt' ),
     log_info       => 1,
     linefold       => { Charset => 'utf-8', Newline => "\n", OutputCharset => '_UNICODE_', Urgent => 'FORCE' },
     max_len_f_name => 62,
@@ -79,6 +81,11 @@ my $opt = {
     overwrite      => 0,
     auto_quality   => 1,
     preferred      => [ 43 ],
+    max_channels   => 25,
+    new_first      => 1,
+    error_get_download_infos => [],
+    download_status_not_ok   => [],
+    incomplete_download      => [],
 };
 
 $opt = read_config_file( $opt, $opt->{config_file} );
@@ -94,36 +101,86 @@ catch {
     exit 1;
 };
 
-my @ids;
-for my $file ( @$arg_file ) {
-    open my $fh, '<:encoding(utf-8)', encode_fs( $file ) or die $!;
+$opt->{channel_history} = [];
+if ( $opt->{max_channels} && -e $opt->{c_history_file} ) {
+    open my $fh, '<', $opt->{c_history_file} or die $!;
     while ( my $line = <$fh> ) {
-        next if $line =~ /^\s*\z/;
-        next if $line =~ /^\s*#/;
-        $line =~ s/^\s+|\s+\z//g;
-        push @ids, split /\s+/, $line;
+        chomp $line;
+        next if $line =~ /^\s+\z/;
+        push @{$opt->{channel_history}}, $line;
     }
-    close $fh or die $!;
+    close $fh;
 }
+
 
 local $| = 1;
 print locate( 1, 1 ), cldown;
 
-push @ids, @ARGV;
-if ( ! @ids ) {
-    my $trs = Term::ReadLine::Simple->new();
-    my $ids = $trs->readline( 'Enter url/id: ' );
-    @ids = split /\s+/, $ids;
-    print up( 1 ), cldown;
-}
-say "No arguments" and exit if ! @ids;
 
-
-
+my @ids = _gather_arguments( $opt, $arg_file, @ARGV );
 my $info = _parse_arguments( $opt, @ids );
-download_youtube( $opt, $info ) if defined $info && %$info;
+( $opt, $info ) = get_download_infos( $opt, $info );
+download_youtube( $opt, $info );
+
+if ( @{$opt->{error_get_download_infos}} ) {
+    print "\n";
+    say "Error fetching download infos:";
+    for my $video_id ( @{$opt->{error_get_download_infos}} ) {
+        say '  ' . $video_id;
+    }
+}
+if ( @{$opt->{download_status_not_ok}} ) {
+    print "\n";
+    say "Download status not ok:";
+    for my $video_id ( @{$opt->{download_status_not_ok}} ) {
+        say '  ' . $video_id;
+    }
+}
+if ( @{$opt->{incomplete_download}} ) {
+    print "\n";
+    say "Incomplete_download:";
+    for my $video_id ( @{$opt->{incomplete_download}} ) {
+        say '  ' . $video_id;
+    }
+}
 
 
+
+
+sub _gather_arguments {
+    my ( $opt, $arg_file, @ids ) = @_;
+    for my $file ( @$arg_file ) {
+        open my $fh, '<:encoding(utf-8)', encode_fs( $file ) or die $!;
+        while ( my $line = <$fh> ) {
+            next if $line =~ /^\s*\z/;
+            next if $line =~ /^\s*#/;
+            $line =~ s/^\s+|\s+\z//g;
+            push @ids, split /\s+/, $line;
+            #unshift @ids, split /\s+/, $line;
+        }
+        close $fh or die $!;
+    }
+    if ( ! @ids ) {
+        my $trs = Term::ReadLine::Simple->new();
+        my $ids = $trs->readline( 'Enter url/id: ' );
+        @ids = split /\s+/, $ids;
+        print up( 1 ), cldown;
+    }
+    if ( ! @ids && @{$opt->{channel_history}} ) {
+        my @sorted = sort @{$opt->{channel_history}};
+        # Choose
+        my @indexes = choose(
+            [ undef, map { "- $_" } map { ( split /,/, $_ )[0] } @sorted ],
+            { prompt => 'Choose channel:', layout => 3, index => 1, undef => '  Exit', no_spacebar => [ 0 ] }
+        );
+        exit if ! $indexes[0];
+        for my $i ( @indexes ) {
+            push @ids, 'c#' . ( split /,/, $sorted[$i - 1] )[1];
+        }
+    }
+    say "No arguments" and exit if ! @ids;
+    return @ids;
+}
 
 sub _parse_arguments {
     my ( $opt, @ids ) = @_;
@@ -249,17 +306,16 @@ sub _list_id_to_info_hash {
     while ( $count_e_nodes == $max_results ) {  # or <link rel='next'>
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
-        try {
-            my $res = wrapper_get( $opt, $info, $url->as_string );
-            my $xml = $res->decoded_content;
-            my @e_nodes = xml_to_entry_node( $opt, $xml );
-            $count_e_nodes = @e_nodes;
-            $info = _entry_nodes_to_info_hash( $opt, $info, \@e_nodes, $type, $list_id );
+        my $res = wrapper_get( $opt, $info, $url->as_string );
+        if ( ! defined $res ) {
+            my $err_msg = $type . ': ' . $list_id . '   ' . ( $start_index - $max_results ) . '-' . $start_index;
+            push @{$opt->{error_get_download_infos}}, $err_msg;
+            next;
         }
-        catch {
-            my $prompt = "$type : $list_id - $_";
-            choose( [ 'Print ENTER' ], { prompt => $prompt } );
-        };
+        my $xml = $res->decoded_content;
+        my @e_nodes = xml_to_entry_node( $opt, $xml );
+        $count_e_nodes = @e_nodes;
+        $info = _entry_nodes_to_info_hash( $opt, $info, \@e_nodes, $type, $list_id );
         last if ! $count_e_nodes;
     }
     if ( ! keys %$info ) {
@@ -293,6 +349,11 @@ sub _video_ids_to_info_hash {
         my $url = URI->new( 'https://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
         my $res = wrapper_get( $opt, $info, $url );
+        if ( ! defined $res ) {
+            my $err_msg = $type . ': ' . $list_id . ' - ' . $video_id . '   ' . $url;
+            push @{$opt->{error_get_download_infos}}, $err_msg;
+            next;
+        }
         my $xml = $res->decoded_content;
         my $e_node = xml_to_entry_node( $opt, $xml );
         $info = entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
@@ -306,13 +367,7 @@ sub _more_url_to_info_hash {
     my $info = {};
     my @video_ids = split /,/, $more_ids;
     my $list_id = 'mr_' . $more;
-    try {
-        $info = _video_ids_to_info_hash( $opt, $info, \@video_ids,  $type, $list_id );
-    }
-    catch {
-        my $prompt = "$type : $list_id - $_";
-        choose( [ 'Print ENTER' ], { prompt => $prompt } );
-    };
+    $info = _video_ids_to_info_hash( $opt, $info, \@video_ids,  $type, $list_id );
     return $info;
 }
 
@@ -329,7 +384,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.020_01
+Version 0.021
 
 =cut
 
@@ -460,6 +515,18 @@ Sets the number of digits allocated for the "kilobyte per seconds" template.
 =head2 Video directory
 
 Choose an alternative YouTube video directory.
+
+=head2 Channel history
+
+How many channels should be saved in the channel history file. Setting I<Channel history> to "0" disables the channel
+
+history.
+
+If no arguments are passed to C<yt-download> the user can choose from the channels saved in the channel history file.
+
+=head2 Sort order
+
+If set to "YES" the latest videos from a channel/list are on top of the menu else they are at the end of the menu.
 
 =head1 REQUIREMENTS
 
