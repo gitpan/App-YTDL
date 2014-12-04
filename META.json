@@ -4,7 +4,7 @@
       "Kuerbis <cuer2s@gmail.com>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 7.02, CPAN::Meta::Converter version 2.142690",
+   "generated_by" : "ExtUtils::MakeMaker version 7.02, CPAN::Meta::Converter version 2.143240",
    "license" : [
       "perl_5"
    ],
@@ -73,5 +73,5 @@
          "web" : "https://github.com/kuerbis/App-YTDL"
       }
    },
-   "version" : "0.021"
+   "version" : "0.022"
 }

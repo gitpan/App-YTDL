@@ -12,7 +12,7 @@ use File::Which            qw( which );
 use IPC::System::Simple    qw( capture );
 use JSON                   qw( decode_json );
 use LWP::UserAgent         qw();
-use List::Util             qw( any none );
+use List::MoreUtils        qw( any none );
 use Term::ANSIScreen       qw( :screen );
 use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
