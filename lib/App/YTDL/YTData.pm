@@ -185,11 +185,11 @@ sub get_data {
 sub choose_from_list_and_add_to_info {
     my ( $opt, $info, $tmp, $ids ) = @_;
     my $regexp;
-    my $ok     = '-OK-';
-    my $close  = 'CLOSE';
+    my $ok     = 'ENTER';
+    my $close  = 'Close';
     my $filter = '     FILTER';
     my $back   = '       BACK | 0:00:00';
-    my $menu   = 'Your choice:';
+    my $menu   = 'Choose:';
     my %chosen_video_ids;
     my @last_chosen_video_ids = ();
 
@@ -221,15 +221,23 @@ sub choose_from_list_and_add_to_info {
         my $choices = [ @pre, @video_print_list, undef ];
         my @idx = choose(
             $choices,
-            { prompt => '', layout => 3, index => 1, default => 1, clear_screen => 1, mark => $mark,
+            { prompt => '', layout => 3, index => 1, default => 0, clear_screen => 1, mark => $mark,
               undef => $back, no_spacebar => [ 0 .. $#pre, $#$choices ] }
         );
-        return if ! defined $idx[0];
+        if ( ! defined $idx[0] ) {
+            return;
+        }
         my $choice = $choices->[$idx[0]];
-        if ( $choice eq $menu ) {
+        if ( ! defined $choice ) {
+            return;
+        }
+        elsif ( $choice eq $menu ) {
             shift @idx;
+            my @choices = ( undef );
+            push @choices, $ok if length $regexp;
+            push @choices, $close;
             my $menu_choice = choose(
-                [ undef, $ok, $close ],
+                \@choices,
                 { prompt => 'Choice: ', layout => 0, default => 0, undef => '<<' }
             );
             if ( ! defined $menu_choice ) {

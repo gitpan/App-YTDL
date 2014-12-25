@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.023   2014-12-25
+        - Channels in the history file can be made sticky.
+        - Update documentation.
+
 0.022   2014-12-04
         - Bugfix: use "List::MoreUtils" for any and none.
 

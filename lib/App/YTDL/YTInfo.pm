@@ -11,7 +11,7 @@ our @EXPORT_OK = qw( get_download_infos );
 use Encode                qw( decode_utf8 );
 use File::Spec::Functions qw( catfile );
 
-use List::MoreUtils   qw( any first_index );
+use List::MoreUtils   qw( any none first_index );
 use Term::ANSIScreen  qw( :cursor :screen );
 use Term::Choose      qw( choose );
 use Text::LineFold    qw();
@@ -113,11 +113,14 @@ sub get_download_infos {
             $info->{$video_id}{count}     = $count;
             $info->{$video_id}{fmt}       = $fmt;
             if ( $opt->{max_channels} ) {
-                my $i = first_index { $info->{$video_id}{channel_id} eq ( ( split /,/, $_ )[1] ) } @{$opt->{channel_history}};
-                if ( $i > -1 ) {
-                    splice @{$opt->{channel_history}}, $i, 1;
+                my $channel_id = $info->{$video_id}{channel_id};
+                if ( none{ $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
+                    my $idx = first_index { $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_history}};
+                    if ( $idx > -1 ) {
+                        splice @{$opt->{channel_history}}, $idx, 1;
+                    }
+                    unshift @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{author_raw}, $channel_id;
                 }
-                push @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{author_raw}, $info->{$video_id}{channel_id};
             }
             $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
             unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
@@ -130,7 +133,7 @@ sub get_download_infos {
     print "\n";
     if ( $opt->{max_channels} ) {
         while ( @{$opt->{channel_history}} > $opt->{max_channels} ) {
-            shift @{$opt->{channel_history}};
+            pop @{$opt->{channel_history}};
         }
         open my $fh, '>', $opt->{c_history_file} or die $!;
         for my $line ( @{$opt->{channel_history}} ) {
