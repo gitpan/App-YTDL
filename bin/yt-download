@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.023';
+our $VERSION = '0.024';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -17,17 +17,14 @@ use Term::ANSIScreen       qw( :cursor :screen );
 use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
 use Try::Tiny              qw( try catch );
-use URI                    qw();
-use URI::Escape            qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 print "\e(U" if $^O eq 'MSWin32';
 
 use App::YTDL::YTConfig    qw( read_config_file options );
-use App::YTDL::YTData      qw( get_data choose_from_list_and_add_to_info wrapper_get );
+use App::YTDL::YTChoose    qw( from_arguments_to_choices );
 use App::YTDL::YTDownload  qw( download_youtube );
 use App::YTDL::YTInfo      qw( get_download_infos );
-use App::YTDL::YTXML       qw( xml_to_entry_node entry_nodes_to_video_ids entry_node_to_info_hash );
 use App::YTDL::GenericFunc qw( encode_fs );
 
 binmode STDIN,  ':encoding(console_in)';
@@ -38,12 +35,10 @@ my ( $arg_file, $help );
 GetOptions( 'f|file=s@' => \$arg_file, 'h|?|help' => \$help )
 or pod2usage( -message => $!, -verbose => 99, -sections => "SYNOPSIS" );
 
-my $my_videos = File::HomeDir->my_videos;
-my $my_data   = File::HomeDir->my_data;
-my $my_home   = File::HomeDir->my_home;
-
+my $my_videos    = File::HomeDir->my_videos;
+my $my_data      = File::HomeDir->my_data;
+my $my_home      = File::HomeDir->my_home;
 my $yt_video_dir = catdir $my_videos || $my_data || curdir, 'YouTube';
-
 my $config_dir;
 if ( $my_data ) {
     $config_dir = catdir $my_data, 'yt_download';
@@ -51,7 +46,6 @@ if ( $my_data ) {
 else {
     $config_dir = catdir $my_home || curdir, '.yt_download';
 }
-
 mkdir $config_dir or die $! if ! -d $config_dir;
 
 my $opt = {
@@ -83,6 +77,7 @@ my $opt = {
     auto_quality   => 1,
     preferred      => [ 43 ],
     max_channels   => 15,
+    channel_dir    => 1,
     new_first      => 1,
     error_get_download_infos => [],
     download_status_not_ok   => [],
@@ -102,47 +97,25 @@ catch {
     exit 1;
 };
 
-
-$opt->{channel_sticky}  = [];
-$opt->{channel_history} = [];
-
-if ( $opt->{max_channels} ) {
-    if ( -e $opt->{c_history_sticky} ) {
-        open my $fh, '<', $opt->{c_history_sticky} or die $!;
-        while ( my $line = <$fh> ) {
-            chomp $line;
-            next if $line =~ /^\s+\z/;
-            push @{$opt->{channel_sticky}}, $line;
-        }
-        close $fh;
-    }
-    if ( -e $opt->{c_history_file} ) {
-        open my $fh, '<', $opt->{c_history_file} or die $!;
-        while ( my $line = <$fh> ) {
-            chomp $line;
-            next if $line =~ /^\s+\z/;
-            push @{$opt->{channel_history}}, $line;
-        }
-        close $fh;
-    }
-}
-
-
 local $| = 1;
 print locate( 1, 1 ), cldown;
 
 
+_read_history_files( $opt );
 my @ids = _gather_arguments( $opt, $arg_file, @ARGV );
-my $info = _parse_arguments( $opt, @ids );
-( $opt, $info ) = get_download_infos( $opt, $info );
+my $info = from_arguments_to_choices( $opt, @ids );
+get_download_infos( $opt, $info );
 download_youtube( $opt, $info );
 
+
+my $error;
 if ( @{$opt->{error_get_download_infos}} ) {
     print "\n";
     say "Error fetching download infos:";
     for my $video_id ( @{$opt->{error_get_download_infos}} ) {
         say '  ' . $video_id;
     }
+    $error++;
 }
 if ( @{$opt->{download_status_not_ok}} ) {
     print "\n";
@@ -150,6 +123,7 @@ if ( @{$opt->{download_status_not_ok}} ) {
     for my $video_id ( @{$opt->{download_status_not_ok}} ) {
         say '  ' . $video_id;
     }
+    $error++;
 }
 if ( @{$opt->{incomplete_download}} ) {
     print "\n";
@@ -157,9 +131,37 @@ if ( @{$opt->{incomplete_download}} ) {
     for my $video_id ( @{$opt->{incomplete_download}} ) {
         say '  ' . $video_id;
     }
+    $error++;
 }
+say "" if $error;
 
 
+
+sub _read_history_files {
+    my ( $opt ) = @_;
+    $opt->{channel_sticky}  = [];
+    $opt->{channel_history} = [];
+    if ( $opt->{max_channels} ) {
+        if ( -e $opt->{c_history_sticky} ) {
+            open my $fh, '<', $opt->{c_history_sticky} or die $!;
+            while ( my $line = <$fh> ) {
+                chomp $line;
+                next if $line =~ /^\s+\z/;
+                push @{$opt->{channel_sticky}}, $line;
+            }
+            close $fh;
+        }
+        if ( -e $opt->{c_history_file} ) {
+            open my $fh, '<', $opt->{c_history_file} or die $!;
+            while ( my $line = <$fh> ) {
+                chomp $line;
+                next if $line =~ /^\s+\z/;
+                push @{$opt->{channel_history}}, $line;
+            }
+            close $fh;
+        }
+    }
+}
 
 
 sub _gather_arguments {
@@ -171,7 +173,6 @@ sub _gather_arguments {
             next if $line =~ /^\s*#/;
             $line =~ s/^\s+|\s+\z//g;
             push @ids, split /\s+/, $line;
-            #unshift @ids, split /\s+/, $line;
         }
         close $fh or die $!;
     }
@@ -184,13 +185,11 @@ sub _gather_arguments {
     if ( ! @ids && ( @{$opt->{channel_history}} || @{$opt->{channel_sticky}} ) ) {
         my @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
         my @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
-        my $sticky = '< STICKY';
-        my @pre = ( undef, $sticky );
-        my @indexes = ();
 
         MENU: while ( 1 ) {
+            my @pre = ( undef, '  STICKY>' );
             # Choose
-            @indexes = choose(
+            my @indexes = choose(
                 [ @pre, map( "* $_", @sticky ), map( "  $_", @history ) ],
                 { prompt => 'Choose channel:', layout => 3, index => 1, undef => '  EXIT', no_spacebar => [ 0 .. $#pre ] }
             );
@@ -233,211 +232,34 @@ sub _gather_arguments {
                 }
             }
             else {
+                my $prompt = "Chosen channel:\n";
+                for my $i ( @indexes ) {
+                    $i -= @pre;
+                    if ( $i <= $#sticky ) {
+                        push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
+                        $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+                    }
+                    else {
+                        $i -= @{$opt->{channel_sticky}};
+                        push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
+                        $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                    }
+                }
+                $prompt .= 'Confirm:';
+                my $ok = choose(
+                    [ ' Yes ', undef ],
+                    { prompt => $prompt, pad => 0, layout => 1, undef => ' No ' }
+                );
+                if ( ! $ok ) {
+                    @ids = ();
+                    next MENU;
+                }
                 last MENU;
-            }
-        }
-        for my $i ( @indexes ) {
-            $i -= @pre;
-            if ( $i <= $#sticky ) {
-                push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
-            }
-            else {
-                $i -= @{$opt->{channel_sticky}};
-                push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
             }
         }
     }
     say "No arguments" and exit if ! @ids;
     return @ids;
-}
-
-sub _parse_arguments {
-    my ( $opt, @ids ) = @_;
-    my $info = {};
-    my $invalid_char = $opt->{invalid_char};
-    my $more = 0;
-    for my $id ( @ids ) {
-        if ( my $channel_id = _user_id( $opt, $id, $invalid_char ) ) {
-            my $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
-            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
-        }
-        elsif ( my $playlist_id = _playlist_id( $opt, $id, $invalid_char ) ) {
-            my $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
-            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
-        }
-        elsif ( my $more_ids = _more_ids( $opt, $id, $invalid_char ) ) {
-            my $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
-            choose_from_list_and_add_to_info( $opt, $info, $tmp, [ keys %$tmp ] );
-        }
-        elsif ( my $video_id = _video_id( $opt, $id, $invalid_char )  ) {
-            $info->{$video_id}{youtube} = 1;
-        }
-        else {
-            $info = get_data( $opt, $info, $id );
-        }
-    }
-    return $info;
-}
-
-
-sub _video_id {
-    my ( $opt, $id, $invalid_char ) = @_;
-    if ( ! $id ) {
-        return;
-    }
-    if ( $id =~ m{^[\p{PerlWord}-]{11}\z} ) {
-        return $id;
-    }
-    if ( $id !~ $opt->{yt_regexp} ) {
-        return;
-    }
-    elsif ( $id =~ m{/.*?[?&;!](?:v|video_id)=([^$invalid_char]+)} ) {
-        return $1;
-    }
-    elsif ( $id =~ m{/(?:e|v|embed)/([^$invalid_char]+)} ) {
-        return $1;
-    }
-    elsif ( $id =~ m{#p/(?:u|search)/\d+/([^&?/]+)} ) {
-        return $1;
-    }
-    elsif ( $id =~ m{youtu.be/([^$invalid_char]+)} ) {
-        return $1;
-    }
-    return;
-}
-
-sub _playlist_id {
-    my ( $opt, $id, $invalid_char ) = @_;
-    if ( ! $id )                                        {
-        return;
-    }
-    if ( $id =~ m{^p#(?:[FP]L)?([^$invalid_char]+)\z} ) {
-        return $1;
-    }
-    if ( $id !~ $opt->{yt_regexp} ) {
-        return;
-    }
-    elsif ( $id =~ m{/.*?[?&;!]list=([^$invalid_char]+)} ) {
-        return $1;
-    }
-    elsif ( $id =~ m{^\s*([FP]L[\w\-]+)\s*\z} ) {
-        return $1;
-    }
-    return;
-}
-
-sub _user_id {
-    my ( $opt, $id, $invalid_char ) = @_;
-    if ( ! $id ) {
-        return;
-    }
-    if ( $id =~ m{^c#([^$invalid_char]+)\z} ) {
-        return $1;
-    }
-    if ( $id !~ $opt->{yt_regexp} ) {
-        return;
-    }
-    elsif ( $id =~ m{/user/([^$invalid_char]+)} ) {
-        return $1;
-    }
-    elsif ( $id =~ m{/channel/([^$invalid_char]+)} ) { # ?
-        return $1;
-    }
-    return;
-}
-
-sub _more_ids {
-    my ( $opt, $id, $invalid_char ) = @_;
-    if ( ! $id ) {
-        return;
-    }
-    elsif ( $id !~ $opt->{yt_regexp} ) {
-        return;
-    }
-    elsif ( uri_unescape( $id ) =~ m{youtu\.?be.*video_ids=([^$invalid_char]+(?:,[^$invalid_char]+)*)} ) {
-        return $1;
-    }
-    return;
-}
-
-
-sub _list_id_to_info_hash {
-    my( $opt, $type, $list_id ) = @_;
-    my $info = {};
-    printf "Fetching %s info ... \n", $type eq 'PL' ? 'playlist' : 'channel';
-    my $url = URI->new( $type eq 'PL'
-        ? 'https://gdata.youtube.com/feeds/api/playlists/' . $list_id
-        : 'https://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
-    );
-    my $start_index = 1;
-    my $max_results = 50;
-    my $count_e_nodes = $max_results;
-    while ( $count_e_nodes == $max_results ) {  # or <link rel='next'>
-        $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
-        $start_index += $max_results;
-        my $res = wrapper_get( $opt, $info, $url->as_string );
-        if ( ! defined $res ) {
-            my $err_msg = $type . ': ' . $list_id . '   ' . ( $start_index - $max_results ) . '-' . $start_index;
-            push @{$opt->{error_get_download_infos}}, $err_msg;
-            next;
-        }
-        my $xml = $res->decoded_content;
-        my @e_nodes = xml_to_entry_node( $opt, $xml );
-        $count_e_nodes = @e_nodes;
-        $info = _entry_nodes_to_info_hash( $opt, $info, \@e_nodes, $type, $list_id );
-        last if ! $count_e_nodes;
-    }
-    if ( ! keys %$info ) {
-        my $prompt = "No videos found: $type - $url";
-        choose( [ 'Print ENTER' ], { prompt => $prompt } );
-    }
-    my $up = keys %$info;
-    print up( $up + 2 ), cldown;
-    return $info;
-}
-
-
-sub _entry_nodes_to_info_hash {
-    my ( $opt, $info, $e_nodes, $type, $list_id ) = @_;
-    if ( $type eq 'PL' ) {
-        my @video_ids = entry_nodes_to_video_ids( $e_nodes );
-        $info = _video_ids_to_info_hash( $opt, $info, \@video_ids, $type, $list_id );
-    }
-    else {
-        for my $e_node ( @$e_nodes ) {
-            $info = entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
-        }
-    }
-    return $info;
-}
-
-
-sub _video_ids_to_info_hash {
-    my ( $opt, $info, $video_ids, $type, $list_id ) = @_;
-    for my $video_id ( @$video_ids ) {
-        my $url = URI->new( 'https://gdata.youtube.com/feeds/api/videos/' . $video_id );
-        $url->query_form( 'v' => $opt->{yt_api_v} );
-        my $res = wrapper_get( $opt, $info, $url );
-        if ( ! defined $res ) {
-            my $err_msg = $type . ': ' . $list_id . ' - ' . $video_id . '   ' . $url;
-            push @{$opt->{error_get_download_infos}}, $err_msg;
-            next;
-        }
-        my $xml = $res->decoded_content;
-        my $e_node = xml_to_entry_node( $opt, $xml );
-        $info = entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
-    }
-    return $info;
-}
-
-
-sub _more_url_to_info_hash {
-    my ( $opt, $more, $type, $more_ids ) = @_;
-    my $info = {};
-    my @video_ids = split /,/, $more_ids;
-    my $list_id = 'mr_' . $more;
-    $info = _video_ids_to_info_hash( $opt, $info, \@video_ids,  $type, $list_id );
-    return $info;
 }
 
 
@@ -453,7 +275,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.023
+Version 0.024
 
 =cut
 
@@ -520,7 +342,7 @@ If I<Overwrite> is enabled, existing files are overwritten.
 
 If not enabled C<yt-download> appends to partially downloaded file with the same name.
 
-=head2 Set auto quality
+=head2 Auto quality mode
 
 Sets the auto quality (fmt) mode:
 
@@ -561,7 +383,7 @@ Sets the number of download retries.
 I<timeout> (seconds) is used as the value for the C<youtube-dl> parameter C<--socket-timeout>. I<timeout> is also used
 as the value for the L<LWP::UserAgent> option C<timeout> when fetching the data required for the video download.
 
-=head2 Enable logging
+=head2 Logging
 
 Enables info logging.
 
@@ -592,6 +414,24 @@ I<Channel history> to "0" disables the channel history.
 
 If no arguments are passed to C<yt-download> the user can choose from the channels saved in the channel history file and
 channel sticky file.
+
+=head2 Channel directory
+
+=over
+
+=item
+
+0 => Don't use channel directories.
+
+=item
+
+1 => Use channel directories if the video is chosen from a channel or a list.
+
+=item
+
+2 => Use always channel directories.
+
+=back
 
 =head2 Sort order
 

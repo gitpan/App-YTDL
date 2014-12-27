@@ -110,18 +110,19 @@ sub options {
     my $help         = "  HELP";
     my $show_path    = "  PATH";
     my $useragent    = "- UserAgent";
-    my $overwrite    = "- Overwrite files";
-    my $auto_fmt     = "- Set auto quality";
+    my $overwrite    = "- Overwrite";
+    my $auto_fmt     = "- Auto quality mode";
     my $preferred    = "- Preferred qualities";
     my $retries      = "- Download retries";
     my $timeout      = "- Timeout";
-    my $logging      = "- Enable logging";
+    my $logging      = "- Logging";
     my $info_width   = "- Max info width";
-    my $auto_width   = "- Enable auto width";
+    my $auto_width   = "- Auto width";
     my $filename_len = "- Max filename length";
     my $len_kb_sec   = "- Digits 'k/s'";
     my $yt_video_dir = "- Video directory";
     my $channel_hist = "- Channel history";
+    my $channel_dir  = "- Channel directory";
     my $new_first    = "- Sort order";
     my %c_hash = (
         $help         => 'show_help_text',
@@ -139,6 +140,7 @@ sub options {
         $len_kb_sec   => 'kb_sec_len',
         $yt_video_dir => 'yt_video_dir',
         $channel_hist => 'max_channels',
+        $channel_dir  => 'channel_dir',
         $new_first    => 'new_first',
     );
     my @choices = (
@@ -157,6 +159,7 @@ sub options {
         $len_kb_sec,
         $yt_video_dir,
         $channel_hist,
+        $channel_dir,
         $new_first,
     );
     my $continue = '  ' . $opt->{continue};
@@ -213,6 +216,7 @@ sub options {
             _opt_yes_no( $opt, $choice, $prompt );
         }
         elsif ( $choice eq "auto_quality" ) {
+            my $prompt = 'Auto quality';
             my $list = [
                 'choose always manually',
                 'keep choice for the respective Playlist/Channel if possible',
@@ -220,7 +224,7 @@ sub options {
                 'use preferred qualities',
                 'use always default (best) quality',
             ];
-            _opt_choose_from_list( $opt, $choice, $list );
+            _opt_choose_from_list( $opt, $choice, $prompt, $list );
         }
         elsif ( $choice eq "preferred" ) {
             my ( $hash, $keys );
@@ -268,6 +272,15 @@ sub options {
             my $prompt = 'Channelhistory: save x channels. Disabled if x is 0';
             my $digits = 3;
             _opt_number_range( $opt, $choice, $prompt, 3 )
+        }
+        elsif ( $choice eq "channel_dir" ) {
+            my $prompt = 'Use channel directory';
+            my $list = [
+                'No',
+                'If chosen from a channel or list',
+                'Always',
+            ];
+            _opt_choose_from_list( $opt, $choice, $prompt, $list );
         }
         elsif ( $choice eq "new_first" ) {
             my $prompt = 'Latest videos on top of the list';
@@ -355,13 +368,13 @@ sub _opt_number {
 }
 
 sub _opt_choose_from_list {
-    my ( $opt, $section, $list ) = @_;
-    my @options = ();
+    my ( $opt, $section, $prompt, $list ) = @_;
+    my @options;
     my $len = length( scalar @$list );
     for my $i ( 0 .. $#$list ) {
         push @options, sprintf "%*d => %s", $len, $i, $list->[$i];
     }
-    my $prompt = "$section [" . ( $opt->{$section} // '--' ) . "]";
+    $prompt .= ' [' . ( $opt->{$section} // '--' ) . ']';
     my $value = choose( [ undef, @options ], { prompt => $prompt, layout => 3, undef => $opt->{s_back} } );
     return if ! defined $value;
     $value = ( split / => /, $value )[0];

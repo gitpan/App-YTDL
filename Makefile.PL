@@ -4,7 +4,7 @@ use strict;
 use ExtUtils::MakeMaker;
 
 
-my %prereqs_os_specific = ();
+my %prereqs_os_specific;
 
 if ( $^O eq 'MSWin32' ) {
     %prereqs_os_specific = (

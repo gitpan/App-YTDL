@@ -9,7 +9,7 @@ use Exporter qw( import );
 our @EXPORT_OK = qw( get_download_infos );
 
 use Encode                qw( decode_utf8 );
-use File::Spec::Functions qw( catfile );
+use File::Spec::Functions qw( catfile catdir );
 
 use List::MoreUtils   qw( any none first_index );
 use Term::ANSIScreen  qw( :cursor :screen );
@@ -24,8 +24,8 @@ use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
 use App::YTDL::YTConfig    qw( map_fmt_to_quality );
 use App::YTDL::YTData      qw( get_data wrapper_get );
-use App::YTDL::YTXML       qw( xml_to_entry_node );
 use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
+
 
 
 sub get_download_infos {
@@ -38,7 +38,8 @@ sub get_download_infos {
     print "\n";
     my @video_ids = sort {
            ( $info->{$b}{extractor}     // ''  ) cmp ( $info->{$a}{extractor}     // ''  )
-        || ( $info->{$a}{list_id}       // ''  ) cmp ( $info->{$b}{list_id}       // ''  )
+        || ( $info->{$a}{playlist_id}   // ''  ) cmp ( $info->{$b}{playlist_id}   // ''  )
+        || ( $info->{$a}{channel_id}   // ''   ) cmp ( $info->{$b}{channel_id}    // ''  )
         || ( $info->{$a}{published_raw} // '0' ) cmp ( $info->{$b}{published_raw} // '0' )
         || ( $info->{$a}{title}         // ''  ) cmp ( $info->{$b}{title}         // ''  )
     } keys %$info;
@@ -108,10 +109,25 @@ sub get_download_infos {
             next VIDEO;
         }
         else {
+            my $video_dir = $opt->{yt_video_dir};
+            if ( $opt->{channel_dir} == 2 || $opt->{channel_dir} == 1 && $info->{$video_id}{from_list} ) {
+                if ( $info->{$video_id}{author} ) {
+                    my $channel_name = $info->{$video_id}{author};
+                    $channel_name =~ s/\s/_/g;
+                    $video_dir = catdir $video_dir, $channel_name;
+                    mkdir $video_dir or die $! if ! -d $video_dir;
+                }
+            }
             $info->{$video_id}{video_url} = $info->{$video_id}{fmt_to_info}{$fmt}{url};
-            $info->{$video_id}{file_name} = catfile( $opt->{yt_video_dir}, _get_filename( $opt, $info, $fmt, $video_id ) );
+            $info->{$video_id}{file_name} = catfile( $video_dir, _get_filename( $opt, $info, $fmt, $video_id ) );
             $info->{$video_id}{count}     = $count;
             $info->{$video_id}{fmt}       = $fmt;
+            $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
+            unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
+            binmode STDOUT, ':pop';
+            print for map { encode_stdout_lax( $_ ) } @$print_array;
+            binmode STDOUT, ':encoding(console_out)';
+            print "\n";
             if ( $opt->{max_channels} ) {
                 my $channel_id = $info->{$video_id}{channel_id};
                 if ( none{ $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
@@ -122,12 +138,6 @@ sub get_download_infos {
                     unshift @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{author_raw}, $channel_id;
                 }
             }
-            $print_array->[0] =~ s/\n\z/ ($fmt)\n/;
-            unshift @$print_array, sprintf "%*.*s : %s\n", $key_len, $key_len, 'video', $count;
-            binmode STDOUT, ':pop';
-            print for map { encode_stdout_lax( $_ ) } @$print_array;
-            binmode STDOUT, ':encoding(console_out)';
-            print "\n";
         }
     }
     print "\n";
@@ -296,33 +306,36 @@ sub _fmt_quality {
     my $auto_quality = $opt->{auto_quality};
     $auto_quality = 2 if $auto_quality == 3 && ! $info->{$video_id}{youtube};
     my $fmt_ok;
-    if ( $auto_quality == 1 && $info->{$video_id}{list_id} ) {
-        my $aq = $info->{$video_id}{list_id};
-        if ( ! defined $opt->{$aq} ) {
+    my $list_id;
+    if ( $info->{$video_id}{from_list} ) {
+        $list_id = $info->{$video_id}{playlist_id} // $info->{$video_id}{channel_id};
+    }
+    if ( $auto_quality == 1 && $list_id ) {
+        if ( ! defined $opt->{$list_id} ) {
             $fmt = _choose_fmt( $opt, $info, $video_id );
             return if ! defined $fmt;
-            $opt->{$aq} = $fmt;
+            $opt->{$list_id} = $fmt;
         }
         else {
-            $fmt = $opt->{$aq};
+            $fmt = $opt->{$list_id};
         }
         $fmt_ok = 1;
     }
     elsif ( $auto_quality == 2 ) {
-        if ( ! defined $opt->{aq} ) {
+        if ( ! defined $opt->{ap_key} ) {
             $fmt = _choose_fmt( $opt, $info, $video_id );
             return if ! defined $fmt;
-            $opt->{aq} = $fmt;
+            $opt->{ap_key} = $fmt;
         }
         else {
-            $fmt = $opt->{aq};
+            $fmt = $opt->{ap_key};
         }
         $fmt_ok = 1;
     }
     elsif ( $auto_quality == 3 ) {
         my @pref_qualities = @{$opt->{preferred}//[]};
         for my $pq ( @pref_qualities ) {
-            if ( any { $pq eq $_ } @{$info->{$video_id}{fmt_list}} ) {
+            if ( any { $pq eq $_ } keys %{$info->{$video_id}{fmt_to_info}} ) {
                 $fmt = $pq;
                 $fmt_ok = 1;
                 last;
@@ -353,8 +366,14 @@ sub _fmt_quality {
 sub _choose_fmt {
     my ( $opt, $info, $video_id ) = @_;
     my ( @choices, @format_ids );
-    for my $fmt ( $info->{$video_id}{youtube} ? sort( { $a <=> $b }  @{$info->{$video_id}{fmt_list}} )
-                                              : sort( { $a cmp $b }  @{$info->{$video_id}{fmt_list}} ) ) {
+    my @fmts;
+    if ( $info->{$video_id}{youtube} ) {
+        @fmts = sort { $a <=> $b } keys %{$info->{$video_id}{fmt_to_info}};
+    }
+    else {
+        @fmts = sort { $a cmp $b } keys %{$info->{$video_id}{fmt_to_info}};
+    }
+    for my $fmt ( @fmts ) {
         push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
         push @format_ids, $fmt;
     }

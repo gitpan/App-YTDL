@@ -1,6 +1,12 @@
 Revision history for App-YTDL
 
 
+0.024   2014-12-27
+        - New option "Channel directory".
+        - Bug fixes.
+        - Code refactoring.
+        - Update documentation.
+
 0.023   2014-12-25
         - Channels in the history file can be made sticky.
         - Update documentation.

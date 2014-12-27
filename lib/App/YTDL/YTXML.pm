@@ -6,13 +6,15 @@ use strict;
 use 5.010000;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( xml_to_entry_node  entry_nodes_to_video_ids entry_node_to_info_hash );
+our @EXPORT_OK = qw( xml_to_entry_node  list_entry_node_to_video_id add_entry_node_to_info_hash );
 
 use URI         qw();
 use URI::Escape qw( uri_escape );
 use XML::LibXML qw();
 
+use App::YTDL::YTData      qw( prepare_info_hash );
 use App::YTDL::GenericFunc qw( sec_to_time insert_sep );
+
 
 
 sub _xml_node_to_xpc {
@@ -24,7 +26,6 @@ sub _xml_node_to_xpc {
     $xpc->registerNs( 'yt',    'http://gdata.youtube.com/schemas/2007' );
     return $xpc;
 }
-
 
 
 sub xml_to_entry_node {
@@ -44,7 +45,7 @@ sub xml_to_entry_node {
 }
 
 
-sub entry_nodes_to_video_ids {
+sub list_entry_node_to_video_id {
     my ( $entry_nodes ) = @_;
     my @video_ids;
     for my $entry ( @$entry_nodes ) {
@@ -60,7 +61,7 @@ sub entry_nodes_to_video_ids {
 }
 
 
-sub entry_node_to_info_hash {
+sub add_entry_node_to_info_hash {
     my ( $opt, $info, $entry, $type, $list_id ) = @_;
     die '$entry node not defined!' if ! defined $entry;
     die 'empty $entry node!'       if ! $entry;
@@ -96,55 +97,17 @@ sub entry_node_to_info_hash {
         video_id        => $video_id,
         view_count      => $view_count,
     };
-    $info->{$video_id}{list_id} = $list_id;
-    $info->{$video_id}{youtube} = 1;
-    $info = _prepare_info_hash( $opt, $info, $video_id, $type, $list_id );
-    return $info;
-}
-
-
-sub _prepare_info_hash {
-    my ( $opt, $info, $video_id, $type, $list_id ) = @_;
-    if ( $type eq 'PL' ) {
-        $info->{$video_id}{playlist_id} = $list_id;
-    }
-    if ( ! $info->{$video_id}{duration_raw} || $info->{$video_id}{duration_raw} !~ /^[0-9]+\z/) {
-        $info->{$video_id}{duration_raw} = 86399;
-    }
-    $info->{$video_id}{duration} = sec_to_time( $info->{$video_id}{duration_raw}, 1 );
-    if ( $info->{$video_id}{published_raw} ) {
-        if ( $info->{$video_id}{published_raw} =~ /^(\d\d\d\d-\d\d-\d\d)T/ ) {
-            $info->{$video_id}{published} = $1;
-        }
-        else {
-            $info->{$video_id}{published} = '0000-00-00';
-        }
-    }
-    if ( $info->{$video_id}{author_raw} ) {
-        $info->{$video_id}{author} = $info->{$video_id}{author_raw};
-    }
     if ( $info->{$video_id}{author_uri} =~ m|/users/([^$opt->{invalid_char}]+)| ) {
         $info->{$video_id}{channel_id} = $1;
-        if ( ! $info->{$video_id}{author} ) {
-            $info->{$video_id}{author} = $info->{$video_id}{channel_id};
-        }
-        else {
-            if ( $info->{$video_id}{author} ne $info->{$video_id}{channel_id} ) {
-                $info->{$video_id}{author} .= ' (' . $info->{$video_id}{channel_id} . ')';
-            }
-        }
     }
-    if ( $info->{$video_id}{avg_rating} ) {
-        $info->{$video_id}{avg_rating} = sprintf "%.2f", $info->{$video_id}{avg_rating};
+    if ( $info->{$video_id}{published_raw} =~ /^(\d\d\d\d-\d\d-\d\d)T/ ) {
+        $info->{$video_id}{published} = $1;
     }
-    if ( $info->{$video_id}{raters} ) {
-        $info->{$video_id}{raters} = insert_sep( $info->{$video_id}{raters} );
-    }
-    if ( $info->{$video_id}{view_count} ) {
-        $info->{$video_id}{view_count} = insert_sep( $info->{$video_id}{view_count} );
-    }
-    return $info;
+    $info->{$video_id}{playlist_id} = $list_id if $type eq 'PL';
+    prepare_info_hash( $info, $video_id );
 }
+
+
 
 
 1;
