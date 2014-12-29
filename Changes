@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.025   2014-12-29
+        - Bugfix: ad channel to history only if youtube.
+        - Code refactoring.
+
 0.024   2014-12-27
         - New option "Channel directory".
         - Bug fixes.

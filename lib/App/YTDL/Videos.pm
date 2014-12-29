@@ -1,5 +1,5 @@
 package # hide from PAUSE
-App::YTDL::YTChoose;
+App::YTDL::Videos;
 
 use warnings;
 use strict;
@@ -15,9 +15,8 @@ use Term::ReadLine::Simple qw();
 use URI                    qw();
 use URI::Escape            qw( uri_unescape );
 
-use App::YTDL::YTData      qw( non_yt_id_to_info_hash wrapper_get );
-use App::YTDL::YTXML       qw( xml_to_entry_node list_entry_node_to_video_id add_entry_node_to_info_hash );
-
+use App::YTDL::Data         qw( wrapper_get get_download_info_as_json );
+use App::YTDL::Data_Extract qw( xml_to_entry_node add_entry_node_to_info_hash json_to_hash );
 
 
 sub from_arguments_to_choices {
@@ -26,31 +25,35 @@ sub from_arguments_to_choices {
     my $invalid_char = $opt->{invalid_char};
     my $more = 0;
     for my $id ( @ids ) {
-        if ( my $channel_id = _user_id( $opt, $id, $invalid_char ) ) {
-            my $tmp = _list_id_to_info_hash( $opt, 'CL', $channel_id );
-            _choose_from_list_and_add_to_info( $opt, $info, $tmp, 1 );
+        if ( my $channel_id = _user_id( $opt, $id ) ) {
+            my $tmp = _id_to_tmp_info_hash( $opt, 'CL', $channel_id );
+            my $is_youtube = 1;
+            _choose_videos_and_add_to_info_hash( $opt, $info, $tmp, $is_youtube );
         }
-        elsif ( my $playlist_id = _playlist_id( $opt, $id, $invalid_char ) ) {
-            my $tmp = _list_id_to_info_hash( $opt, 'PL', $playlist_id );
-            _choose_from_list_and_add_to_info( $opt, $info, $tmp, 1 );
+        elsif ( my $playlist_id = _playlist_id( $opt, $id ) ) {
+            my $tmp = _id_to_tmp_info_hash( $opt, 'PL', $playlist_id );
+            my $is_youtube = 1;
+            _choose_videos_and_add_to_info_hash( $opt, $info, $tmp, $is_youtube );
         }
-        elsif ( my $more_ids = _more_ids( $opt, $id, $invalid_char ) ) {
-            my $tmp = _more_url_to_info_hash( $opt, ++$more, 'MR', $more_ids );
-            _choose_from_list_and_add_to_info( $opt, $info, $tmp, 1 );
+        elsif ( my $more_ids = _more_ids( $opt, $id ) ) {
+            my $tmp = _more_url_to_tmp_info_hash( $opt, $more_ids );
+            my $is_youtube = 1;
+            _choose_videos_and_add_to_info_hash( $opt, $info, $tmp, $is_youtube );
         }
-        elsif ( my $video_id = _video_id( $opt, $id, $invalid_char )  ) {
+        elsif ( my $video_id = _video_id( $opt, $id )  ) {
             $info->{$video_id}{youtube} = 1;
         }
         else {
-            my $tmp = non_yt_id_to_info_hash( $opt, $id );
+            my $tmp = _non_yt_id_to_tmp_info_hash( $opt, $id );
+            my $is_youtube = 0;
             my @keys = keys %$tmp;
-            if ( @keys > 1 ) {
-                _choose_from_list_and_add_to_info( $opt, $info, $tmp, 0 );
-            }
-            else {
+            if ( @keys == 1 ) {
                 my $video_id = $keys[0];
                 $info->{$video_id} = $tmp->{$video_id};
                 $info->{$video_id}{youtube} = 0;
+            }
+            else {
+                _choose_videos_and_add_to_info_hash( $opt, $info, $tmp, $is_youtube );
             }
         }
     }
@@ -59,7 +62,8 @@ sub from_arguments_to_choices {
 
 
 sub _video_id {
-    my ( $opt, $id, $invalid_char ) = @_;
+    my ( $opt, $id ) = @_;
+    my $invalid_char = $opt->{invalid_char};
     if ( ! $id ) {
         return;
     }
@@ -85,7 +89,8 @@ sub _video_id {
 }
 
 sub _playlist_id {
-    my ( $opt, $id, $invalid_char ) = @_;
+    my ( $opt, $id ) = @_;
+    my $invalid_char = $opt->{invalid_char};
     if ( ! $id )                                        {
         return;
     }
@@ -105,7 +110,8 @@ sub _playlist_id {
 }
 
 sub _user_id {
-    my ( $opt, $id, $invalid_char ) = @_;
+    my ( $opt, $id ) = @_;
+    my $invalid_char = $opt->{invalid_char};
     if ( ! $id ) {
         return;
     }
@@ -125,7 +131,8 @@ sub _user_id {
 }
 
 sub _more_ids {
-    my ( $opt, $id, $invalid_char ) = @_;
+    my ( $opt, $id ) = @_;
+    my $invalid_char = $opt->{invalid_char};
     if ( ! $id ) {
         return;
     }
@@ -139,21 +146,21 @@ sub _more_ids {
 }
 
 
-sub _list_id_to_info_hash {
+sub _id_to_tmp_info_hash {
     my( $opt, $type, $list_id ) = @_;
-    my $info = {};
     printf "Fetching %s info ... \n", $type eq 'PL' ? 'playlist' : 'channel';
     my $url = URI->new( $type eq 'PL'
         ? 'https://gdata.youtube.com/feeds/api/playlists/' . $list_id
         : 'https://gdata.youtube.com/feeds/api/users/'     . $list_id . '/uploads'
     );
+    my $tmp = {};
     my $start_index = 1;
     my $max_results = 50;
     my $count_e_nodes = $max_results;
     while ( $count_e_nodes == $max_results ) {  # or <link rel='next'>
         $url->query_form( 'start-index' => $start_index, 'max-results' => $max_results, 'v' => $opt->{yt_api_v} );
         $start_index += $max_results;
-        my $res = wrapper_get( $opt, $info, $url->as_string );
+        my $res = wrapper_get( $opt, $url->as_string );
         if ( ! defined $res ) {
             my $err_msg = $type . ': ' . $list_id . '   ' . ( $start_index - $max_results ) . '-' . $start_index;
             push @{$opt->{error_get_download_infos}}, $err_msg;
@@ -162,59 +169,55 @@ sub _list_id_to_info_hash {
         my $xml = $res->decoded_content;
         my @e_nodes = xml_to_entry_node( $opt, $xml );
         $count_e_nodes = @e_nodes;
-        if ( $type eq 'PL' ) {
-            my @video_ids = list_entry_node_to_video_id( \@e_nodes );
-            @e_nodes = _video_id_to_video_entry_node( $opt, $info, \@video_ids, $type, $list_id );
-        }
         for my $e_node ( @e_nodes ) {
-            add_entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
+            add_entry_node_to_info_hash( $opt, $tmp, $e_node, $type, $list_id );
         }
         last if ! $count_e_nodes;
     }
-    if ( ! keys %$info ) {
+    if ( ! keys %$tmp ) {
         my $prompt = "No videos found: $type - $url";
         choose( [ 'Print ENTER' ], { prompt => $prompt } );
     }
-    my $up = keys %$info;
+    my $up = keys %$tmp;
     print up( $up + 2 ), cldown;
-    return $info;
+    return $tmp;
 }
 
 
-sub _more_url_to_info_hash {
-    my ( $opt, $more, $type, $more_ids ) = @_;
-    my $info = {};
-    my @video_ids = split /,/, $more_ids;
-    my $list_id = 'mr_' . $more;
-    my @e_nodes = _video_id_to_video_entry_node( $opt, $info, \@video_ids,  $type, $list_id );
-    for my $e_node ( @e_nodes ) {
-        add_entry_node_to_info_hash( $opt, $info, $e_node, $type, $list_id );
-    }
-    return $info;
-}
-
-
-sub _video_id_to_video_entry_node {
-    my ( $opt, $info, $video_ids, $type, $list_id ) = @_;
-    my @e_nodes;
-    for my $video_id ( @$video_ids ) {
+sub _more_url_to_tmp_info_hash {
+    my ( $opt, $more_ids ) = @_;
+    my $tmp = {};
+    for my $video_id ( split /,/, $more_ids ) {
         my $url = URI->new( 'https://gdata.youtube.com/feeds/api/videos/' . $video_id );
         $url->query_form( 'v' => $opt->{yt_api_v} );
-        my $res = wrapper_get( $opt, $info, $url );
+        my $res = wrapper_get( $opt, $url );
         if ( ! defined $res ) {
-            my $err_msg = $type . ': ' . $list_id . ' - ' . $video_id . '   ' . $url;
+            my $err_msg = 'Video group: ' . $more_ids . ' - ' . $video_id . '   ' . $url;
             push @{$opt->{error_get_download_infos}}, $err_msg;
             next;
         }
         my $xml = $res->decoded_content;
         my $e_node = xml_to_entry_node( $opt, $xml );
-        push @e_nodes, $e_node;
+        add_entry_node_to_info_hash( $opt, $tmp, $e_node );
     }
-    return @e_nodes;
+    return $tmp;
 }
 
 
-sub _choose_from_list_and_add_to_info {
+sub _non_yt_id_to_tmp_info_hash {
+    my ( $opt, $id ) = @_;
+    my $message = "Fetching download info: ";
+    my $json_all = get_download_info_as_json( $opt, $id, $message );
+    my $tmp = {};
+    return $tmp if ! $json_all;
+    for my $json ( split /\n+/, $json_all ) {
+        json_to_hash( $json, $tmp );
+    }
+    return $tmp;
+}
+
+
+sub _choose_videos_and_add_to_info_hash {
     my ( $opt, $info, $tmp, $is_youtube ) = @_;
     my $regexp;
     my $ok     = 'ENTER';
@@ -228,7 +231,7 @@ sub _choose_from_list_and_add_to_info {
     FILTER: while ( 1 ) {
         my @pre = ( $menu );
         push @pre, $filter if ! length $regexp;
-        my @video_print_list;
+        my @videos;
         my @tmp_video_ids;
         my $index = $#pre;
         my $mark = [];
@@ -247,12 +250,12 @@ sub _choose_from_list_and_add_to_info {
             }
             $tmp->{$video_id}{from_list} = 1;
             $tmp->{$video_id}{youtube}   = $is_youtube;
-            push @video_print_list, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{published}, $title;
+            push @videos, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{published}, $title;
             push @tmp_video_ids, $video_id;
             $index++;
             push @$mark, $index if any { $video_id eq $_ } keys %chosen_video_ids;
         }
-        my $choices = [ @pre, @video_print_list, undef ];
+        my $choices = [ @pre, @videos, undef ];
         my @idx = choose(
             $choices,
             { prompt => '', layout => 3, index => 1, default => 0, clear_screen => 1, mark => $mark,

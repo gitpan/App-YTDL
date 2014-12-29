@@ -1,12 +1,12 @@
 package # hide from PAUSE
-App::YTDL::YTConfig;
+App::YTDL::Config;
 
 use warnings;
 use strict;
 use 5.010000;
 
 use Exporter qw( import );
-our @EXPORT_OK = qw( map_fmt_to_quality read_config_file options );
+our @EXPORT_OK = qw( map_fmt_to_quality read_config_file set_options );
 
 use File::Spec::Functions qw( catfile );
 use File::Temp            qw();
@@ -20,7 +20,7 @@ use Term::ReadLine::Simple qw();
 use Text::LineFold         qw();
 
 
-use App::YTDL::GenericFunc qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
+use App::YTDL::Helper qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
 
 
 sub map_fmt_to_quality {
@@ -105,7 +105,7 @@ sub map_fmt_to_quality {
 }
 
 
-sub options {
+sub set_options {
     my ( $opt ) = @_;
     my $help         = "  HELP";
     my $show_path    = "  PATH";
@@ -288,7 +288,7 @@ sub options {
         }
         else { die $choice }
     }
-    return $opt;
+    return;
 }
 
 sub _opt_choose_a_directory {
@@ -444,7 +444,7 @@ sub read_config_file {
     for my $section ( keys %$tmp ) {
         $opt->{$section} = $tmp->{$section};
     }
-    return $opt;
+    return;
 }
 
 

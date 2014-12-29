@@ -1,5 +1,5 @@
 package # hide from PAUSE
-App::YTDL::YTInfo;
+App::YTDL::Info;
 
 use warnings;
 use strict;
@@ -22,9 +22,10 @@ use URI::Escape       qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTConfig    qw( map_fmt_to_quality );
-use App::YTDL::YTData      qw( get_data wrapper_get );
-use App::YTDL::GenericFunc qw( term_size unicode_trim encode_stdout_lax );
+use App::YTDL::Config       qw( map_fmt_to_quality );
+use App::YTDL::Data         qw( wrapper_get get_download_info_as_json );
+use App::YTDL::Data_Extract qw( json_to_hash );
+use App::YTDL::Helper       qw( term_size unicode_trim encode_stdout_lax );
 
 
 
@@ -37,11 +38,11 @@ sub get_download_infos {
     say 'Agent: ', $opt->{useragent} // '';
     print "\n";
     my @video_ids = sort {
-           ( $info->{$b}{extractor}     // ''  ) cmp ( $info->{$a}{extractor}     // ''  )
-        || ( $info->{$a}{playlist_id}   // ''  ) cmp ( $info->{$b}{playlist_id}   // ''  )
-        || ( $info->{$a}{channel_id}   // ''   ) cmp ( $info->{$b}{channel_id}    // ''  )
-        || ( $info->{$a}{published_raw} // '0' ) cmp ( $info->{$b}{published_raw} // '0' )
-        || ( $info->{$a}{title}         // ''  ) cmp ( $info->{$b}{title}         // ''  )
+           ( $info->{$b}{extractor}   // ''  ) cmp ( $info->{$a}{extractor}   // ''  )
+        || ( $info->{$a}{playlist_id} // ''  ) cmp ( $info->{$b}{playlist_id} // ''  )
+        || ( $info->{$a}{uploader_id} // ''  ) cmp ( $info->{$b}{uploader_id} // ''  )
+        || ( $info->{$a}{upload_date} // '0' ) cmp ( $info->{$b}{upload_date} // '0' )
+        || ( $info->{$a}{title}       // ''  ) cmp ( $info->{$b}{title}       // ''  )
     } keys %$info;
     my $fmt;
     my $count = 0;
@@ -111,8 +112,8 @@ sub get_download_infos {
         else {
             my $video_dir = $opt->{yt_video_dir};
             if ( $opt->{channel_dir} == 2 || $opt->{channel_dir} == 1 && $info->{$video_id}{from_list} ) {
-                if ( $info->{$video_id}{author} ) {
-                    my $channel_name = $info->{$video_id}{author};
+                if ( $info->{$video_id}{uploader} ) {
+                    my $channel_name = $info->{$video_id}{uploader};
                     $channel_name =~ s/\s/_/g;
                     $video_dir = catdir $video_dir, $channel_name;
                     mkdir $video_dir or die $! if ! -d $video_dir;
@@ -128,14 +129,14 @@ sub get_download_infos {
             print for map { encode_stdout_lax( $_ ) } @$print_array;
             binmode STDOUT, ':encoding(console_out)';
             print "\n";
-            if ( $opt->{max_channels} ) {
-                my $channel_id = $info->{$video_id}{channel_id};
-                if ( none{ $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
-                    my $idx = first_index { $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_history}};
+            if ( $opt->{max_channels} && $info->{$video_id}{youtube} ) {
+                my $uploader_id = $info->{$video_id}{uploader_id};
+                if ( none{ $uploader_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
+                    my $idx = first_index { $uploader_id eq ( split /,/, $_ )[1] } @{$opt->{channel_history}};
                     if ( $idx > -1 ) {
                         splice @{$opt->{channel_history}}, $idx, 1;
                     }
-                    unshift @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{author_raw}, $channel_id;
+                    unshift @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{uploader}, $uploader_id;
                 }
             }
         }
@@ -188,12 +189,14 @@ sub _status_not_ok {
 
 sub _get_yt_print_info {
     my ( $opt, $info, $video_id ) = @_;
-    $info = get_data( $opt, $info, $video_id );
+    my $message = "** GET download info: ";
+    my $json = get_download_info_as_json( $opt, $video_id, $message );
+    json_to_hash( $json, $info ) if $json;
     my $info_url = URI->new( 'https://www.youtube.com/get_video_info' );
     $info_url->query_form( 'video_id' => $video_id );
-    my $res = wrapper_get( $opt, $info, $info_url->as_string );
-    return $info if ! defined $res; ###
+    my $res = wrapper_get( $opt, $info_url->as_string );
     $opt->{up}++;
+    return $info if ! defined $res;
     for my $item ( split /&/, $res->decoded_content ) {
         my ( $key, $value ) = split /=/, $item;
         if ( defined $value && $key =~ /^(?:title|keywords|reason|status)\z/ ) {
@@ -210,6 +213,7 @@ sub _prepare_print_info {
     my ( $opt, $info, $video_id ) = @_;
     my @keys = ( qw( title video_id ) );
     push @keys, 'extractor' if ! $info->{$video_id}{youtube};
+    $info->{$video_id}{author} = $info->{$video_id}{uploader};
     push @keys, qw( author duration raters avg_rating view_count published content description keywords );
     for my $key ( @keys ) {
         next if ! $info->{$video_id}{$key};
@@ -306,20 +310,21 @@ sub _fmt_quality {
     my $auto_quality = $opt->{auto_quality};
     $auto_quality = 2 if $auto_quality == 3 && ! $info->{$video_id}{youtube};
     my $fmt_ok;
-    my $list_id;
-    if ( $info->{$video_id}{from_list} ) {
-        $list_id = $info->{$video_id}{playlist_id} // $info->{$video_id}{channel_id};
+    if ( $auto_quality == 0 ) {
     }
-    if ( $auto_quality == 1 && $list_id ) {
-        if ( ! defined $opt->{$list_id} ) {
-            $fmt = _choose_fmt( $opt, $info, $video_id );
-            return if ! defined $fmt;
-            $opt->{$list_id} = $fmt;
+    elsif ( $auto_quality == 1 && $info->{$video_id}{from_list} ) {
+        my $list_id = $info->{$video_id}{playlist_id} // $info->{$video_id}{uploader_id};
+        if ( $list_id ) {
+            if ( ! defined $opt->{$list_id} ) {
+                $fmt = _choose_fmt( $opt, $info, $video_id );
+                return if ! defined $fmt;
+                $opt->{$list_id} = $fmt;
+            }
+            else {
+                $fmt = $opt->{$list_id};
+            }
+            $fmt_ok = 1;
         }
-        else {
-            $fmt = $opt->{$list_id};
-        }
-        $fmt_ok = 1;
     }
     elsif ( $auto_quality == 2 ) {
         if ( ! defined $opt->{ap_key} ) {
@@ -351,8 +356,8 @@ sub _fmt_quality {
             $opt->{up}++;
         }
     }
-    elsif ( $auto_quality == 4 && defined $info->{$video_id}{default_fmt} ) {
-        $fmt = $info->{$video_id}{default_fmt};
+    elsif ( $auto_quality == 4 && defined $info->{$video_id}{format_id} ) {
+        $fmt = $info->{$video_id}{format_id};
         $fmt_ok = 1;
     }
     if ( ! $fmt_ok ) {
@@ -368,14 +373,18 @@ sub _choose_fmt {
     my ( @choices, @format_ids );
     my @fmts;
     if ( $info->{$video_id}{youtube} ) {
-        @fmts = sort { $a <=> $b } keys %{$info->{$video_id}{fmt_to_info}};
+        for my $fmt ( sort { $a <=> $b } keys %{$info->{$video_id}{fmt_to_info}} ) {
+            my ( $fmt, $desc ) = split '\s*-\s*', $info->{$video_id}{fmt_to_info}{$fmt}{format};
+            $desc = '' if ! $desc;
+            push @choices, sprintf '%3s - %s %s', $fmt, $desc, $info->{$video_id}{fmt_to_info}{$fmt}{ext};
+            push @format_ids, $fmt;
+        }
     }
     else {
-        @fmts = sort { $a cmp $b } keys %{$info->{$video_id}{fmt_to_info}};
-    }
-    for my $fmt ( @fmts ) {
-        push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
-        push @format_ids, $fmt;
+        for my $fmt ( sort { $a cmp $b } keys %{$info->{$video_id}{fmt_to_info}} ) {
+            push @choices, $info->{$video_id}{fmt_to_info}{$fmt}{format} . ' ' . $info->{$video_id}{fmt_to_info}{$fmt}{ext};
+            push @format_ids, $fmt;
+        }
     }
     my @pre = ( undef );
     print "\n";
@@ -383,7 +392,7 @@ sub _choose_fmt {
     # Choose
     my $fmt_res_idx = choose(
         [ @pre, @choices ],
-        { prompt => 'Your choice: ', index => 1, order => 0, undef => 'Menu' }
+        { prompt => 'Your choice: ', index => 1, order => 1, undef => 'Menu' }
     );
     return if ! $fmt_res_idx;
     $fmt_res_idx -= @pre;

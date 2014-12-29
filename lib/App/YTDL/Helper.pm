@@ -1,5 +1,5 @@
 package # hide from PAUSE
-App::YTDL::GenericFunc;
+App::YTDL::Helper;
 
 use warnings;
 use strict;

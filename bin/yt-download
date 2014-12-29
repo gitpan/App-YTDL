@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.024';
+our $VERSION = '0.025';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -21,11 +21,11 @@ use Try::Tiny              qw( try catch );
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 print "\e(U" if $^O eq 'MSWin32';
 
-use App::YTDL::YTConfig    qw( read_config_file options );
-use App::YTDL::YTChoose    qw( from_arguments_to_choices );
-use App::YTDL::YTDownload  qw( download_youtube );
-use App::YTDL::YTInfo      qw( get_download_infos );
-use App::YTDL::GenericFunc qw( encode_fs );
+use App::YTDL::Config   qw( read_config_file set_options );
+use App::YTDL::Videos   qw( from_arguments_to_choices );
+use App::YTDL::Download qw( download_youtube );
+use App::YTDL::Info     qw( get_download_infos );
+use App::YTDL::Helper   qw( encode_fs );
 
 binmode STDIN,  ':encoding(console_in)';
 binmode STDOUT, ':encoding(console_out)';
@@ -39,6 +39,7 @@ my $my_videos    = File::HomeDir->my_videos;
 my $my_data      = File::HomeDir->my_data;
 my $my_home      = File::HomeDir->my_home;
 my $yt_video_dir = catdir $my_videos || $my_data || curdir, 'YouTube';
+
 my $config_dir;
 if ( $my_data ) {
     $config_dir = catdir $my_data, 'yt_download';
@@ -46,7 +47,10 @@ if ( $my_data ) {
 else {
     $config_dir = catdir $my_home || curdir, '.yt_download';
 }
-mkdir $config_dir or die $! if ! -d $config_dir;
+if ( ! -d $config_dir ) {
+    mkdir $config_dir or die $!;
+}
+
 
 my $opt = {
     back           => 'BACK',
@@ -84,9 +88,14 @@ my $opt = {
     incomplete_download      => [],
 };
 
-$opt = read_config_file( $opt, $opt->{config_file} );
-$opt = options( $opt ) if $help;
-mkdir $opt->{yt_video_dir} or die $! if ! -d $opt->{yt_video_dir};
+
+read_config_file( $opt, $opt->{config_file} );
+if ( $help ) {
+    set_options( $opt );
+}
+if ( ! -d $opt->{yt_video_dir} ) {
+    mkdir $opt->{yt_video_dir} or die $!;
+}
 
 try {
     my $youtube_dl = which( 'youtube-dl' ) // 'youtube-dl';
@@ -101,11 +110,17 @@ local $| = 1;
 print locate( 1, 1 ), cldown;
 
 
+
 _read_history_files( $opt );
+
 my @ids = _gather_arguments( $opt, $arg_file, @ARGV );
+
 my $info = from_arguments_to_choices( $opt, @ids );
+
 get_download_infos( $opt, $info );
+
 download_youtube( $opt, $info );
+
 
 
 my $error;
@@ -183,84 +198,130 @@ sub _gather_arguments {
         print up( 1 ), cldown;
     }
     if ( ! @ids && ( @{$opt->{channel_history}} || @{$opt->{channel_sticky}} ) ) {
-        my @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
-        my @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
-
-        MENU: while ( 1 ) {
-            my @pre = ( undef, '  STICKY>' );
+        MENU : while ( 1 ) {
+            my ( $channel, $sticky ) = ( '  Channel', '  Sticky' );
             # Choose
-            my @indexes = choose(
-                [ @pre, map( "* $_", @sticky ), map( "  $_", @history ) ],
-                { prompt => 'Choose channel:', layout => 3, index => 1, undef => '  EXIT', no_spacebar => [ 0 .. $#pre ] }
+            my $choice = choose(
+                [ undef, $channel, $sticky ],
+                { prompt => 'Choose:', layout => 3, undef => '  QUIT' }
             );
-            if ( ! $indexes[0] ) {
+            if ( ! defined $choice ) {
                 exit;
             }
-            elsif ( $indexes[0] == 1 ) {
-                my $changed = 0;
-                my @pre = ( undef );
-                while ( 1 ) {
-                    my $idx = choose(
-                        [ @pre, map( "+ $_", @sticky ), map( "- $_", @history ) ],
-                        { prompt => 'Choose:', layout => 3, index => 1, no_spacebar => [ 0 ], undef => '  <=' }
+            elsif ( $choice eq $channel ) {
+                my @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
+                my @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
+                my $prompt = 'Channels:' . "\n";
+                CHANNEL: while ( 1 ) {
+                    my @pre = ( undef, '  CONFIRM' );
+                    my $choices = [ @pre, map( "* $_", @sticky ), map( "  $_", @history ), '  RESET' ];
+                    # Choose
+                    my @indexes = choose(
+                        $choices,
+                        { prompt => $prompt . "\nYour choice:", layout => 3, index => 1,
+                          undef => '  BACK', no_spacebar => [ 0 .. $#pre, $#$choices ] }
                     );
-                    last if ! $idx;
-                    $changed++;
-                    $idx-= @pre;
-                    if ( $idx > $#{$opt->{channel_sticky}} ) {
-                        $idx -= @{$opt->{channel_sticky}};
-                        push @{$opt->{channel_sticky}}, splice @{$opt->{channel_history}}, $idx, 1;
-                        @{$opt->{channel_sticky}} = sort @{$opt->{channel_sticky}};
+                    if ( ! $indexes[0] ) {
+                        @ids = ();
+                        next MENU;
+                    }
+                    elsif ( $indexes[0] == 1 ) {
+                        shift @indexes;
+                        for my $i ( @indexes ) {
+                            $i -= @pre;
+                            if ( $i <= $#sticky ) {
+                                push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
+                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+                            }
+                            else {
+                                $i -= @{$opt->{channel_sticky}};
+                                push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
+                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                            }
+                        }
+                        last MENU;
+                    }
+                    elsif ( $indexes[0] == $#$choices ) {
+                        @ids = ();
+                        $prompt = 'Channels:' . "\n";
                     }
                     else {
-                        push @{$opt->{channel_history}}, splice @{$opt->{channel_sticky}}, $idx, 1;
+                        for my $i ( @indexes ) {
+                            $i -= @pre;
+                            if ( $i <= $#sticky ) {
+                                push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
+                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+                            }
+                            else {
+                                $i -= @{$opt->{channel_sticky}};
+                                push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
+                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                            }
+                        }
                     }
-                    @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
-                    @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
-                }
-                if ( $changed ) {
-                    open my $fh_sticky, '>', $opt->{c_history_sticky} or die $!;
-                    for my $line ( @{$opt->{channel_sticky}} ) {
-                        say $fh_sticky $line;
-                    }
-                    close $fh_sticky;
-                    open my $fh_history, '>', $opt->{c_history_file} or die $!;
-                    for my $line ( @{$opt->{channel_history}} ) {
-                        say $fh_history $line;
-                    }
-                    close $fh_history;
                 }
             }
-            else {
-                my $prompt = "Chosen channel:\n";
-                for my $i ( @indexes ) {
-                    $i -= @pre;
-                    if ( $i <= $#sticky ) {
-                        push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
-                        $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+            elsif ( $choice eq $sticky ) {
+                my @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
+                my @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
+                my @backup_channel_sticky  = @{$opt->{channel_sticky}};
+                my @backup_channel_history = @{$opt->{channel_history}};
+                my $changed = 0;
+                STICKY: while ( 1 ) {
+                    my @pre = ( undef, '  CONFIRM' );
+                    my $idx = choose(
+                        [ @pre, map( "+ $_", @sticky ), map( "- $_", @history ) ],
+                        { prompt => 'Choose:', layout => 3, undef => '  BACK' }
+                    );
+                    if ( ! $idx ) {
+                        @{$opt->{channel_sticky}}  = @backup_channel_sticky;
+                        @{$opt->{channel_history}} = @backup_channel_history;
+                        @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
+                        @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
+                        next MENU;
+                    }
+                    elsif ( $idx == 1 ) {
+                        if ( $changed ) {
+                            open my $fh_sticky, '>', $opt->{c_history_sticky} or die $!;
+                            for my $line ( @{$opt->{channel_sticky}} ) {
+                                say $fh_sticky $line;
+                            }
+                            close $fh_sticky;
+                            open my $fh_history, '>', $opt->{c_history_file} or die $!;
+                            for my $line ( @{$opt->{channel_history}} ) {
+                                say $fh_history $line;
+                            }
+                            close $fh_history;
+                        }
+                        next MENU;
                     }
                     else {
-                        $i -= @{$opt->{channel_sticky}};
-                        push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
-                        $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                        $changed++;
+                        $idx-= @pre;
+                        if ( $idx > $#{$opt->{channel_sticky}} ) {
+                            $idx -= @{$opt->{channel_sticky}};
+                            push @{$opt->{channel_sticky}}, splice @{$opt->{channel_history}}, $idx, 1;
+                            @{$opt->{channel_sticky}} = sort @{$opt->{channel_sticky}};
+                        }
+                        else {
+                            push @{$opt->{channel_history}}, splice @{$opt->{channel_sticky}}, $idx, 1;
+                        }
+                        @sticky  = map { ( split /,/, $_ )[0] } @{$opt->{channel_sticky}};
+                        @history = map { ( split /,/, $_ )[0] } @{$opt->{channel_history}};
                     }
                 }
-                $prompt .= 'Confirm:';
-                my $ok = choose(
-                    [ ' Yes ', undef ],
-                    { prompt => $prompt, pad => 0, layout => 1, undef => ' No ' }
-                );
-                if ( ! $ok ) {
-                    @ids = ();
-                    next MENU;
-                }
-                last MENU;
             }
         }
     }
     say "No arguments" and exit if ! @ids;
     return @ids;
 }
+
+
+
+
+
+
 
 
 __END__
@@ -275,7 +336,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.024
+Version 0.025
 
 =cut
 

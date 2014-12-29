@@ -1,5 +1,5 @@
 package # hide from PAUSE
-App::YTDL::YTDownload;
+App::YTDL::Download;
 
 use warnings;
 use strict;
@@ -19,8 +19,8 @@ use Try::Tiny        qw( try catch );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::YTData      qw( get_new_video_url );
-use App::YTDL::GenericFunc qw( sec_to_time insert_sep encode_fs encode_stdout );
+use App::YTDL::Data   qw( get_new_video_url );
+use App::YTDL::Helper qw( sec_to_time insert_sep encode_fs encode_stdout );
 
 use constant {
     HIDE_CURSOR => "\e[?25l",
@@ -162,9 +162,9 @@ sub _log_info {
     my ( $sec, $min, $hour, $mday, $mon, $year ) = localtime;
     my $log_str = sprintf( "%04d-%02d-%02d %02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min )
         . '>  ' . sprintf( "%11s", $info->{$video_id}{youtube} ? $video_id : ( $info->{$video_id}{extractor_key} // '' ) . ' ' . ( $info->{$video_id}{id} // '' ) )
-        . ' | ' . ( $info->{$video_id}{channel_id} // '------' )
+        . ' | ' . ( $info->{$video_id}{uploader_id} // '------' )
         . ' | ' . ( $info->{$video_id}{playlist_id} // '----------' )
-        . ' | ' . ( $info->{$video_id}{published} // '0000-00-00' )
+        . ' | ' . ( $info->{$video_id}{published}   // '0000-00-00' )
         . '   ' . basename( $info->{$video_id}{file_name} );
     open my $log, '>>:encoding(UTF-8)', encode_fs( $opt->{log_file} ) or die $!;
     flock $log, LOCK_EX     or die $!;
@@ -179,7 +179,7 @@ sub _p_fmt {
     my %hash = (
         start        => "  %s  %3s  %9s\n", ###
         status_416   => "  %s  %3s  %7s  %9s   %s\n",
-        status       => "  %s  %3s  %7s  %9s  %s  %s    %s  %s\n",
+        status       => "  %s  %3s  %7s  %9s   %s   %s    %s  %s\n",
         info_row1    => "%9.*f %s %37s %"    . (      $opt->{kb_sec_len} ) . "sk/s\n",
         info_row2    => "%9.*f %s %6.*f%% %" . ( 30 + $opt->{kb_sec_len} ) . "sk/s\n",
         info_nt_row1 => " %34s %24sk/s\n",

@@ -1,13 +1,13 @@
 bin/yt-download
 Changes
 lib/App/YTDL.pm
-lib/App/YTDL/GenericFunc.pm
-lib/App/YTDL/YTChoose.pm
-lib/App/YTDL/YTConfig.pm
-lib/App/YTDL/YTData.pm
-lib/App/YTDL/YTDownload.pm
-lib/App/YTDL/YTInfo.pm
-lib/App/YTDL/YTXML.pm
+lib/App/YTDL/Config.pm
+lib/App/YTDL/Data.pm
+lib/App/YTDL/Data_Extract.pm
+lib/App/YTDL/Download.pm
+lib/App/YTDL/Helper.pm
+lib/App/YTDL/Info.pm
+lib/App/YTDL/Videos.pm
 LICENSE
 Makefile.PL
 MANIFEST			This list of files
