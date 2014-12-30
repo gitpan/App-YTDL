@@ -1,6 +1,10 @@
 Revision history for App-YTDL
 
 
+0.027   2014-12-30
+        - "Delete","Redo","Append": fixed video count.
+        - Modified status messages.
+
 0.026   2014-12-30
         - Bugfix: "sticky".
         - Bugfix: entries history file.

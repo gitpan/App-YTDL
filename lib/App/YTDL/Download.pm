@@ -59,8 +59,7 @@ sub _download_video {
     binmode STDOUT, ':pop';
     printf "  %s (%s)\n", encode_stdout( $file_basename ), $info->{$video_id}{duration} // '?';
     binmode STDOUT, ':encoding(console_out)';
-    my $tvl = length $opt->{total_nr_videos};
-    my $video_count = sprintf "%${tvl}s from %s", $nr, $opt->{total_nr_videos};
+    my $video_count = sprintf "%*s from %s", length $opt->{total_nr_videos}, $nr, $opt->{total_nr_videos};
     my $length_video_count = length $video_count;
     local $SIG{INT} = sub {
         print cldown, "\n";
@@ -72,14 +71,14 @@ sub _download_video {
     RETRY: while ( 1 ) {
         $p->{size}      = -s $file_name_OS // 0;
         $p->{starttime} = gettimeofday;
-        my $retries = '    ';
+        my $retries = ' ' x ( length( $opt->{retries} ) * 2 + 1 );
         if ( $try > 1 ) {
-            $retries = "$try/$opt->{retries}";
+            $retries = sprintf "%*s/%s", length $opt->{retries}, $try, $opt->{retries};
             $video_count = ' ' x $length_video_count;
         }
-        my $at = '';
         my $res;
         if ( ! $p->{size} ) {
+            my $at = '';
             open my $fh, '>:raw', $file_name_OS or die $!;
             printf _p_fmt( $opt, "start" ), $video_count, $retries, $at;
             _log_info( $opt, $info, $video_id ) if $opt->{log_info};
@@ -90,7 +89,7 @@ sub _download_video {
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
-            $at = sprintf "@%.2fM", $p->{size} / 1024 ** 2; #
+            my $at = sprintf "at %.2fM", $p->{size} / 1024 ** 2;
             open my $fh, '>>:raw', $file_name_OS or die $!;
             printf _p_fmt( $opt, "start" ), $video_count, $retries, $at;
             $res = $ua->get(
@@ -103,30 +102,37 @@ sub _download_video {
         print up;
         print cldown;
         my $status = $res->code;
-        my $pr_status = 'status ' . $status;
+        my $length_total_mb = length( int( $p->{total} / 1024 ** 2 ) ) + 2;
         my $dl_time = sec_to_time( int( tv_interval( [ $p->{starttime} ] ) ), 1 );
+        my $size = ' ' x ( $length_total_mb + 2 );
         my $avg_speed = '';
-        my $size = '';
+        my $at   = ' ' x ( $length_total_mb + 3 );
+        my $pr_status = 'status ' . $status;
         my $incomplete = '';
         if ( $status =~ /^(200|206|416)/ ) {
             my $file_size = -s $file_name_OS // -1;
             if ( $p->{total} ) {
                 if ( $file_size != $p->{total} ) {
-                    $retries = "$try/$opt->{retries}";
                     my $pr_total = insert_sep( $p->{total} );
-                    my $l = length( $pr_total );
-                    $size = sprintf "%7.2fM", $file_size / 1024 ** 2;
-                    $incomplete = sprintf " Incomplete: %${l}s/%s ", insert_sep( $file_size ), $pr_total;
+                    $incomplete = sprintf " Incomplete: %*s/%s ", length( $pr_total ), insert_sep( $file_size ), $pr_total;
+                    $retries    = sprintf "%*s/%s", length $opt->{retries}, $try, $opt->{retries};
                 }
-                elsif ( $status =~ /^20[06]\z/ ) {
-                    $size = sprintf "%7.2fM", $p->{total} / 1024 ** 2;
+                if ( $status == 416 ) {
+                    $dl_time = '';
+                    $at      = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
                 }
-                $avg_speed = sprintf "avg %sk/s", $p->{kbs_avg} || '--';
+                if ( $status == 206 ) {
+                    $size      = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
+                    $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
+                    $at        = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
+                }
+                if ( $status =~ 200 ) {
+                    $size      = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
+                    $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
+                    $pr_status = ' ' x 10;
+                }
             }
-            $pr_status = '' if $status == 200;
             if ( $status == 416 ) {
-                $dl_time = '';
-                $at = sprintf "%.2fM", $p->{size} / 1024 ** 2;
                 printf _p_fmt( $opt, "status_416" ), $video_count, $retries, $dl_time, $at, $pr_status;
             }
             else {
@@ -136,7 +142,7 @@ sub _download_video {
             last RETRY if $status == 416;
         }
         else {
-            $retries = "$try/$opt->{retries}";
+            $retries = sprintf "%*s/%s", length $opt->{retries}, $try, $opt->{retries};
             $pr_status = 'status ' . $status . '  Fetching new video url ...';
             my $new_video_url = get_new_video_url( $opt, $info, $video_id );
             if ( ! $new_video_url ) {
@@ -181,10 +187,11 @@ sub _log_info {
 
 sub _p_fmt {
     my ( $opt, $key ) = @_;
+    my $sl = $opt->{kb_sec_len} + 7;
     my %hash = (
         start        => "  %s  %3s  %9s\n", ###
-        status_416   => "  %s  %3s  %7s  %9s   %s\n",
-        status       => "  %s  %3s  %7s  %9s  %11s   %s    %s  %s\n",
+        status_416   => "  %s  %3s  %7s  %9s   %s\n", #
+        status       => "  %s  %3s  %7s  %9s  %${sl}s   %s    %s  %s\n",
         info_row1    => "%9.*f %s %37s %"    . (      $opt->{kb_sec_len} ) . "sk/s\n",
         info_row2    => "%9.*f %s %6.*f%% %" . ( 30 + $opt->{kb_sec_len} ) . "sk/s\n",
         info_nt_row1 => " %34s %24sk/s\n",

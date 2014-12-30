@@ -100,12 +100,15 @@ sub get_download_infos {
                     print up( 2 ), cldown;
                     print "\n";
                 }
+                $count--;
             }
             elsif ( $choice eq $append ) {
                 push @video_ids, $video_id;
+                $count--;
             }
             elsif ( $choice eq $redo ) {
                 unshift @video_ids, $video_id;
+                $count--;
             }
             next VIDEO;
         }
