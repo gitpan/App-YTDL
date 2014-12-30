@@ -80,11 +80,11 @@ sub add_entry_node_to_info_hash {
         video_id    => $video_id,
         view_count  => $view_count,
     };
-    if ( $info->{$video_id}{author_uri} =~ m|/users/([^$opt->{invalid_char}]+)| ) {
+    if ( $info->{$video_id}{author_uri} && $info->{$video_id}{author_uri} =~ m|/users/([^$opt->{invalid_char}]+)| ) {
         $info->{$video_id}{uploader_id} = $1;
     }
-    if ( $info->{$video_id}{upload_date} =~ /^(\d\d\d\d-\d\d-\d\d)T/ ) {
-        $info->{$video_id}{published} = $1;
+    if ( $info->{$video_id}{upload_date} && $info->{$video_id}{upload_date} =~ /^(\d\d\d\d-\d\d-\d\d)T/ ) {
+        $info->{$video_id}{upload_date} = $1;
     }
     if ( defined $type && $type eq 'PL' ) {
         $info->{$video_id}{playlist_id} = $list_id;
@@ -117,7 +117,7 @@ sub json_to_hash {
         }
     }
     if ( $tmp->{$video_id}{upload_date} && $tmp->{$video_id}{upload_date} =~ /^(\d{4})(\d{2})(\d{2})\z/ ) {
-            $tmp->{$video_id}{published} = $1 . '-' . $2 . '-' . $3;
+            $tmp->{$video_id}{upload_date} = $1 . '-' . $2 . '-' . $3;
     }
     $tmp->{$video_id}{fmt_to_info} = $formats;
     _prepare_info_hash( $tmp, $video_id );
@@ -138,25 +138,13 @@ sub _prepare_info_hash {
     else {
         $info->{$video_id}{duration} = '-:--:--';
     }
-    if ( ! $info->{$video_id}{published} ) {
-        if ( $info->{$video_id}{upload_date} ) {
-            $info->{$video_id}{published} = $info->{$video_id}{upload_date};
-        }
-        else {
-            $info->{$video_id}{published} = '0000-00-00';
-        }
+    if ( ! $info->{$video_id}{upload_date} ) {
+        $info->{$video_id}{upload_date} = '0000-00-00';
     }
-    if ( $info->{$video_id}{uploader_id} ) {
-        if ( ! $info->{$video_id}{uploader} ) {
-            $info->{$video_id}{uploader} = $info->{$video_id}{uploader_id};
-        }
-        else {
-            if ( $info->{$video_id}{uploader} ne $info->{$video_id}{uploader_id} ) {
-                $info->{$video_id}{uploader} .= ' (' . $info->{$video_id}{uploader_id} . ')';
-            }
-        }
+    if ( ! $info->{$video_id}{uploader} ) {
+        $info->{$video_id}{uploader} = $info->{$video_id}{uploader_id};
     }
-    else {
+    if ( ! $info->{$video_id}{uploader_id} ) {
         $info->{$video_id}{uploader_id} = $info->{$video_id}{playlist_id};
     }
     if ( $info->{$video_id}{like_count} && $info->{$video_id}{dislike_count} ) {
@@ -167,7 +155,6 @@ sub _prepare_info_hash {
             $info->{$video_id}{avg_rating} = $info->{$video_id}{like_count} * 5 / $info->{$video_id}{raters};
         }
     }
-
     if ( $info->{$video_id}{avg_rating} ) {
         $info->{$video_id}{avg_rating} = sprintf "%.2f", $info->{$video_id}{avg_rating};
     }

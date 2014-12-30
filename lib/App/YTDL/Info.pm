@@ -38,11 +38,11 @@ sub get_download_infos {
     say 'Agent: ', $opt->{useragent} // '';
     print "\n";
     my @video_ids = sort {
-           ( $info->{$b}{extractor}   // ''  ) cmp ( $info->{$a}{extractor}   // ''  )
-        || ( $info->{$a}{playlist_id} // ''  ) cmp ( $info->{$b}{playlist_id} // ''  )
-        || ( $info->{$a}{uploader_id} // ''  ) cmp ( $info->{$b}{uploader_id} // ''  )
-        || ( $info->{$a}{upload_date} // '0' ) cmp ( $info->{$b}{upload_date} // '0' )
-        || ( $info->{$a}{title}       // ''  ) cmp ( $info->{$b}{title}       // ''  )
+           ( $info->{$b}{extractor}   // '' ) cmp ( $info->{$a}{extractor}   // '' )
+        || ( $info->{$a}{playlist_id} // '' ) cmp ( $info->{$b}{playlist_id} // '' )
+        || ( $info->{$a}{uploader_id} // '' ) cmp ( $info->{$b}{uploader_id} // '' )
+        || ( $info->{$a}{upload_date} // '' ) cmp ( $info->{$b}{upload_date} // '' )
+        || ( $info->{$a}{title}       // '' ) cmp ( $info->{$b}{title}       // '' )
     } keys %$info;
     my $fmt;
     my $count = 0;
@@ -130,13 +130,14 @@ sub get_download_infos {
             binmode STDOUT, ':encoding(console_out)';
             print "\n";
             if ( $opt->{max_channels} && $info->{$video_id}{youtube} ) {
-                my $uploader_id = $info->{$video_id}{uploader_id};
-                if ( none{ $uploader_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
-                    my $idx = first_index { $uploader_id eq ( split /,/, $_ )[1] } @{$opt->{channel_history}};
+                my $channel    = $info->{$video_id}{uploader};
+                my $channel_id = $info->{$video_id}{uploader_id};
+                if ( none{ $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
+                    my $idx = first_index { $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_history}};
                     if ( $idx > -1 ) {
                         splice @{$opt->{channel_history}}, $idx, 1;
                     }
-                    unshift @{$opt->{channel_history}}, sprintf "%s,%s", $info->{$video_id}{uploader}, $uploader_id;
+                    unshift @{$opt->{channel_history}}, sprintf "%s,%s", $channel, $channel_id;
                 }
             }
         }
@@ -211,9 +212,15 @@ sub _get_yt_print_info {
 
 sub _prepare_print_info {
     my ( $opt, $info, $video_id ) = @_;
+    $info->{$video_id}{published} = $info->{$video_id}{upload_date};
+    $info->{$video_id}{author}    = $info->{$video_id}{uploader};
+    if ( $info->{$video_id}{author} && $info->{$video_id}{uploader_id} ) {
+        if ( $info->{$video_id}{author} ne $info->{$video_id}{uploader_id} ) {
+            $info->{$video_id}{author} .= ' (' . $info->{$video_id}{uploader_id} . ')';
+        }
+    }
     my @keys = ( qw( title video_id ) );
     push @keys, 'extractor' if ! $info->{$video_id}{youtube};
-    $info->{$video_id}{author} = $info->{$video_id}{uploader};
     push @keys, qw( author duration raters avg_rating view_count published content description keywords );
     for my $key ( @keys ) {
         next if ! $info->{$video_id}{$key};

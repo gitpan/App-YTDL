@@ -169,10 +169,12 @@ sub _id_to_tmp_info_hash {
         my $xml = $res->decoded_content;
         my @e_nodes = xml_to_entry_node( $opt, $xml );
         $count_e_nodes = @e_nodes;
+        if ( ! $count_e_nodes ) {
+            last;
+        }
         for my $e_node ( @e_nodes ) {
             add_entry_node_to_info_hash( $opt, $tmp, $e_node, $type, $list_id );
         }
-        last if ! $count_e_nodes;
     }
     if ( ! keys %$tmp ) {
         my $prompt = "No videos found: $type - $url";
@@ -236,8 +238,8 @@ sub _choose_videos_and_add_to_info_hash {
         my $index = $#pre;
         my $mark = [];
         my @video_ids = sort {
-            ( $opt->{new_first} ? ( $tmp->{$b}{published} // '' ) cmp ( $tmp->{$a}{published} // '' )
-                                : ( $tmp->{$a}{published} // '' ) cmp ( $tmp->{$b}{published} // '' ) )
+            ( $opt->{new_first} ? ( $tmp->{$b}{upload_date} // '' ) cmp ( $tmp->{$a}{upload_date} // '' )
+                                : ( $tmp->{$a}{upload_date} // '' ) cmp ( $tmp->{$b}{upload_date} // '' ) )
                                || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } keys %$tmp;
 
 
@@ -250,7 +252,7 @@ sub _choose_videos_and_add_to_info_hash {
             }
             $tmp->{$video_id}{from_list} = 1;
             $tmp->{$video_id}{youtube}   = $is_youtube;
-            push @videos, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{published}, $title;
+            push @videos, sprintf "%11s | %7s  %10s  %s", $video_id, $tmp->{$video_id}{duration}, $tmp->{$video_id}{upload_date}, $title;
             push @tmp_video_ids, $video_id;
             $index++;
             push @$mark, $index if any { $video_id eq $_ } keys %chosen_video_ids;

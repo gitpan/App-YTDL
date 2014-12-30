@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use 5.010000;
 
-our $VERSION = '0.025';
+our $VERSION = '0.026';
 
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
@@ -231,12 +231,12 @@ sub _gather_arguments {
                             $i -= @pre;
                             if ( $i <= $#sticky ) {
                                 push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
-                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+                                $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
                             }
                             else {
                                 $i -= @{$opt->{channel_sticky}};
                                 push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
-                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                                $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_history}[$i];
                             }
                         }
                         last MENU;
@@ -250,12 +250,12 @@ sub _gather_arguments {
                             $i -= @pre;
                             if ( $i <= $#sticky ) {
                                 push @ids, 'c#' . ( split /,/, $opt->{channel_sticky}[$i] )[1];
-                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
+                                $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_sticky}[$i];
                             }
                             else {
                                 $i -= @{$opt->{channel_sticky}};
                                 push @ids, 'c#' . ( split /,/, $opt->{channel_history}[$i] )[1];
-                                $prompt .= sprintf "  %s (%s)\n", split /,/, $opt->{channel_history}[$i];
+                                $prompt .= sprintf "- %s (%s)\n", split /,/, $opt->{channel_history}[$i];
                             }
                         }
                     }
@@ -271,7 +271,7 @@ sub _gather_arguments {
                     my @pre = ( undef, '  CONFIRM' );
                     my $idx = choose(
                         [ @pre, map( "+ $_", @sticky ), map( "- $_", @history ) ],
-                        { prompt => 'Choose:', layout => 3, undef => '  BACK' }
+                        { prompt => 'Choose:', layout => 3, index => 1, undef => '  BACK' }
                     );
                     if ( ! $idx ) {
                         @{$opt->{channel_sticky}}  = @backup_channel_sticky;
@@ -336,7 +336,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.025
+Version 0.026
 
 =cut
 

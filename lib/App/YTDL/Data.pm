@@ -77,18 +77,18 @@ sub get_download_info_as_json {
     push @cmd, '--socket-timeout', $opt->{timeout};
     #push @cmd, '-v';
     push @cmd, '--dump-json', '--', $video_id;
-    my $capture;
+    my $json;
     my $count = 1;
     RETRY: while ( 1 ) {
         my $not_ok;
         try {
             print HIDE_CURSOR;
             print $message . '...';
-            $capture = capture( @cmd );
+            $json = capture( @cmd );
             print "\r", clline;
             print $message . "done.\n";
             print SHOW_CURSOR;
-            die if ! defined $capture;
+            die if ! defined $json;
         }
         catch {
             say "$count/$opt->{retries}  $video_id: $_";
@@ -105,7 +105,7 @@ sub get_download_info_as_json {
         last;
     }
     $opt->{up}++;
-    return $capture;
+    return $json;
 }
 
 

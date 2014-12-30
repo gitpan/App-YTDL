@@ -59,6 +59,9 @@ sub _download_video {
     binmode STDOUT, ':pop';
     printf "  %s (%s)\n", encode_stdout( $file_basename ), $info->{$video_id}{duration} // '?';
     binmode STDOUT, ':encoding(console_out)';
+    my $tvl = length $opt->{total_nr_videos};
+    my $video_count = sprintf "%${tvl}s from %s", $nr, $opt->{total_nr_videos};
+    my $length_video_count = length $video_count;
     local $SIG{INT} = sub {
         print cldown, "\n";
         print SHOW_CURSOR;
@@ -69,9 +72,11 @@ sub _download_video {
     RETRY: while ( 1 ) {
         $p->{size}      = -s $file_name_OS // 0;
         $p->{starttime} = gettimeofday;
-        my $retries     = $try == 1 ? '   ' : "$try/$opt->{retries}";
-        my $tvl = length $opt->{total_nr_videos};
-        my $video_count = sprintf "%${tvl}s from %s", $nr, $opt->{total_nr_videos};
+        my $retries = '    ';
+        if ( $try > 1 ) {
+            $retries = "$try/$opt->{retries}";
+            $video_count = ' ' x $length_video_count;
+        }
         my $at = '';
         my $res;
         if ( ! $p->{size} ) {
@@ -85,7 +90,7 @@ sub _download_video {
             close $fh or die $!;
         }
         elsif ( $p->{size} ) {
-            $at = sprintf "@%.2fM", $p->{size} / 1024 ** 2;
+            $at = sprintf "@%.2fM", $p->{size} / 1024 ** 2; #
             open my $fh, '>>:raw', $file_name_OS or die $!;
             printf _p_fmt( $opt, "start" ), $video_count, $retries, $at;
             $res = $ua->get(
@@ -150,7 +155,7 @@ sub _download_video {
             push @{$opt->{incomplete_download}}, $video_url;
             last RETRY;
         }
-        sleep 3 * $try;
+        sleep 4 * $try;
     }
     print SHOW_CURSOR;
     return;
@@ -164,7 +169,7 @@ sub _log_info {
         . '>  ' . sprintf( "%11s", $info->{$video_id}{youtube} ? $video_id : ( $info->{$video_id}{extractor_key} // '' ) . ' ' . ( $info->{$video_id}{id} // '' ) )
         . ' | ' . ( $info->{$video_id}{uploader_id} // '------' )
         . ' | ' . ( $info->{$video_id}{playlist_id} // '----------' )
-        . ' | ' . ( $info->{$video_id}{published}   // '0000-00-00' )
+        . ' | ' . ( $info->{$video_id}{upload_date} // '0000-00-00' )
         . '   ' . basename( $info->{$video_id}{file_name} );
     open my $log, '>>:encoding(UTF-8)', encode_fs( $opt->{log_file} ) or die $!;
     flock $log, LOCK_EX     or die $!;
@@ -179,7 +184,7 @@ sub _p_fmt {
     my %hash = (
         start        => "  %s  %3s  %9s\n", ###
         status_416   => "  %s  %3s  %7s  %9s   %s\n",
-        status       => "  %s  %3s  %7s  %9s   %s   %s    %s  %s\n",
+        status       => "  %s  %3s  %7s  %9s  %11s   %s    %s  %s\n",
         info_row1    => "%9.*f %s %37s %"    . (      $opt->{kb_sec_len} ) . "sk/s\n",
         info_row2    => "%9.*f %s %6.*f%% %" . ( 30 + $opt->{kb_sec_len} ) . "sk/s\n",
         info_nt_row1 => " %34s %24sk/s\n",
