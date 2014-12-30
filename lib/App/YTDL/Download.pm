@@ -60,7 +60,6 @@ sub _download_video {
     printf "  %s (%s)\n", encode_stdout( $file_basename ), $info->{$video_id}{duration} // '?';
     binmode STDOUT, ':encoding(console_out)';
     my $video_count = sprintf "%*s from %s", length $opt->{total_nr_videos}, $nr, $opt->{total_nr_videos};
-    my $length_video_count = length $video_count;
     local $SIG{INT} = sub {
         print cldown, "\n";
         print SHOW_CURSOR;
@@ -74,7 +73,7 @@ sub _download_video {
         my $retries = ' ' x ( length( $opt->{retries} ) * 2 + 1 );
         if ( $try > 1 ) {
             $retries = sprintf "%*s/%s", length $opt->{retries}, $try, $opt->{retries};
-            $video_count = ' ' x $length_video_count;
+            $video_count = ' ' x length( $video_count );
         }
         my $res;
         if ( ! $p->{size} ) {
@@ -102,16 +101,19 @@ sub _download_video {
         print up;
         print cldown;
         my $status = $res->code;
-        my $length_total_mb = length( int( $p->{total} / 1024 ** 2 ) ) + 2;
         my $dl_time = sec_to_time( int( tv_interval( [ $p->{starttime} ] ) ), 1 );
-        my $size = ' ' x ( $length_total_mb + 2 );
+        my $size = '';
         my $avg_speed = '';
-        my $at   = ' ' x ( $length_total_mb + 3 );
+        my $at   = '';
         my $pr_status = 'status ' . $status;
         my $incomplete = '';
         if ( $status =~ /^(200|206|416)/ ) {
             my $file_size = -s $file_name_OS // -1;
+            $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
             if ( $p->{total} ) {
+                my $length_total_mb = length( int( $p->{total} / 1024 ** 2 ) ) + 2;
+                $size = ' ' x ( $length_total_mb + 2 );
+                $at   = ' ' x ( $length_total_mb + 3 );
                 if ( $file_size != $p->{total} ) {
                     my $pr_total = insert_sep( $p->{total} );
                     $incomplete = sprintf " Incomplete: %*s/%s ", length( $pr_total ), insert_sep( $file_size ), $pr_total;
@@ -119,16 +121,15 @@ sub _download_video {
                 }
                 if ( $status == 416 ) {
                     $dl_time = '';
-                    $at      = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
+                    $at = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
+                    $avg_speed =  '';
                 }
                 if ( $status == 206 ) {
-                    $size      = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
-                    $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
-                    $at        = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
+                    $size = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
+                    $at = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
                 }
                 if ( $status =~ 200 ) {
-                    $size      = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
-                    $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
+                    $size = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
                     $pr_status = ' ' x 10;
                 }
             }
