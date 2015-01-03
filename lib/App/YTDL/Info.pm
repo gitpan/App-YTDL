@@ -8,24 +8,18 @@ use 5.010000;
 use Exporter qw( import );
 our @EXPORT_OK = qw( get_download_infos );
 
-use Encode                qw( decode_utf8 );
 use File::Spec::Functions qw( catfile catdir );
 
 use List::MoreUtils   qw( any none first_index );
 use Term::ANSIScreen  qw( :cursor :screen );
 use Term::Choose      qw( choose );
-use Text::LineFold    qw();
-use Try::Tiny         qw( try catch );
 use Unicode::GCString qw();
-use URI               qw();
-use URI::Escape       qw( uri_unescape );
 
 use if $^O eq 'MSWin32', 'Win32::Console::ANSI';
 
-use App::YTDL::Config       qw( map_fmt_to_quality );
-use App::YTDL::Data         qw( wrapper_get get_download_info_as_json );
-use App::YTDL::Data_Extract qw( json_to_hash );
-use App::YTDL::Helper       qw( term_size unicode_trim encode_stdout_lax );
+use App::YTDL::YT_Quality qw( map_fmt_to_quality );
+use App::YTDL::Info_Print qw( linefolded_print_info );
+use App::YTDL::Helper     qw( term_size unicode_trim encode_stdout_lax encode_fs );
 
 
 
@@ -34,15 +28,15 @@ sub get_download_infos {
     my ( $cols, $rows ) = term_size();
     print "\n\n\n", '=' x $cols, "\n\n", "\n" x $rows;
     print locate( 1, 1 ), cldown;
-    say 'Dir  : ', $opt->{yt_video_dir};
+    say 'Dir  : ', $opt->{video_dir};
     say 'Agent: ', $opt->{useragent} // '';
     print "\n";
     my @video_ids = sort {
-           ( $info->{$b}{extractor}   // '' ) cmp ( $info->{$a}{extractor}   // '' )
-        || ( $info->{$a}{playlist_id} // '' ) cmp ( $info->{$b}{playlist_id} // '' )
-        || ( $info->{$a}{uploader_id} // '' ) cmp ( $info->{$b}{uploader_id} // '' )
-        || ( $info->{$a}{upload_date} // '' ) cmp ( $info->{$b}{upload_date} // '' )
-        || ( $info->{$a}{title}       // '' ) cmp ( $info->{$b}{title}       // '' )
+           ( $info->{$b}{extractor_key} // '' ) cmp ( $info->{$a}{extractor_key} // '' )
+        || ( $info->{$a}{playlist_id}   // '' ) cmp ( $info->{$b}{playlist_id}   // '' )
+        || ( $info->{$a}{uploader_id}   // '' ) cmp ( $info->{$b}{uploader_id}   // '' )
+        || ( $info->{$a}{upload_date}   // '' ) cmp ( $info->{$b}{upload_date}   // '' )
+        || ( $info->{$a}{title}         // '' ) cmp ( $info->{$b}{title}         // '' )
     } keys %$info;
     my $fmt;
     my $count = 0;
@@ -51,12 +45,14 @@ sub get_download_infos {
     VIDEO:
     while ( @video_ids ) {
         my $video_id = shift @video_ids;
-        my ( $print_array, $col_max, $key_len );
         $count++;
-        if ( $info->{$video_id}{youtube} ) {
-            $info = _get_yt_print_info( $opt, $info, $video_id );
+        my $key_len = 13;
+        my $print_array = linefolded_print_info( $opt, $info, $video_id, $key_len );
+        my $status_not_ok;
+        if ( defined $info->{$video_id}{status} && $info->{$video_id}{status} ne 'ok' ) { # $info->{$video_id}{youtube}
+            $status_not_ok = 1;
+            unshift @$print_array, sprintf "%*.*s : %s  %s\n", $key_len, $key_len, 'video', $count, 'Status NOT OK!';
         }
-        ( $info, $print_array, $col_max, $key_len ) = _prepare_print_info( $opt, $info, $video_id );
         print "\n";
         $opt->{up}++;
         binmode STDOUT, ':pop';
@@ -65,19 +61,11 @@ sub get_download_infos {
         $opt->{up} += @$print_array;
         print "\n";
         $opt->{up}++;
-        if ( $info->{$video_id}{youtube} ) {
-            if ( defined $info->{$video_id}{status} && $info->{$video_id}{status} ne 'ok' ) {
-                my $status_not_ok_array = _status_not_ok( $opt, $info, $video_id, $col_max, $key_len );
-                splice @$print_array, 1, 0, @$status_not_ok_array;
-                print up( $opt->{up} ), cldown;
-                $opt->{up} = 0;
-                unshift @$print_array, sprintf "%*.*s : %s  %s\n", $key_len, $key_len, 'video', $count, 'Status NOT OK!';
-                binmode STDOUT, ':pop';
-                print for map { encode_stdout_lax( $_ ) } @$print_array;
-                binmode STDOUT, ':encoding(console_out)';
-                print "\n";
-                next VIDEO;
-            }
+        if ( $status_not_ok ) {
+            push @{$opt->{download_status_not_ok}}, $video_id . ' - ' . $info->{$video_id}{title};
+            delete $info->{$video_id};
+            $opt->{up} = 0;
+            next VIDEO;
         }
         $fmt = _fmt_quality( $opt, $info, $fmt, $video_id );
         print up( $opt->{up} ), cldown;
@@ -87,7 +75,7 @@ sub get_download_infos {
             # Choose
             my $choice = choose(
                 [ undef, $delete, $append, $redo ],
-                { prompt => 'Your choice: ', undef => $opt->{quit} }
+                { prompt => 'Your choice: ', undef => 'QUIT' }
             );
             if ( ! defined $choice ) {
                 print locate( 1, 1 ), cldown;
@@ -100,26 +88,32 @@ sub get_download_infos {
                     print up( 2 ), cldown;
                     print "\n";
                 }
-                $count--;
             }
             elsif ( $choice eq $append ) {
                 push @video_ids, $video_id;
-                $count--;
             }
             elsif ( $choice eq $redo ) {
                 unshift @video_ids, $video_id;
-                $count--;
             }
+            $count--;
             next VIDEO;
         }
         else {
-            my $video_dir = $opt->{yt_video_dir};
+            my $video_dir = $opt->{video_dir};
+            if ( $opt->{extractor_dir} ) {
+                if ( $info->{$video_id}{extractor_key} ) {
+                    my $extractor_dir = $info->{$video_id}{extractor_key};
+                    $extractor_dir =~ s/\s/_/g;
+                    $video_dir = catdir $video_dir, $extractor_dir;
+                    mkdir encode_fs( $video_dir ) or die $! if ! -d encode_fs( $video_dir );
+                }
+            }
             if ( $opt->{channel_dir} == 2 || $opt->{channel_dir} == 1 && $info->{$video_id}{from_list} ) {
                 if ( $info->{$video_id}{uploader} ) {
                     my $channel_name = $info->{$video_id}{uploader};
                     $channel_name =~ s/\s/_/g;
                     $video_dir = catdir $video_dir, $channel_name;
-                    mkdir $video_dir or die $! if ! -d $video_dir;
+                    mkdir encode_fs( $video_dir ) or die $! if ! -d encode_fs( $video_dir );
                 }
             }
             $info->{$video_id}{video_url} = $info->{$video_id}{fmt_to_info}{$fmt}{url};
@@ -132,7 +126,7 @@ sub get_download_infos {
             print for map { encode_stdout_lax( $_ ) } @$print_array;
             binmode STDOUT, ':encoding(console_out)';
             print "\n";
-            if ( $opt->{max_channels} && $info->{$video_id}{youtube} ) {
+            if ( $opt->{max_channels} && $info->{$video_id}{youtube} && $info->{$video_id}{uploader_id} ) {
                 my $channel    = $info->{$video_id}{uploader};
                 my $channel_id = $info->{$video_id}{uploader_id};
                 if ( none{ $channel_id eq ( split /,/, $_ )[1] } @{$opt->{channel_sticky}} ) {
@@ -150,7 +144,7 @@ sub get_download_infos {
         while ( @{$opt->{channel_history}} > $opt->{max_channels} ) {
             pop @{$opt->{channel_history}};
         }
-        open my $fh, '>', $opt->{c_history_file} or die $!;
+        open my $fh, '>:encoding(UTF-8)', encode_fs( $opt->{c_history_file} ) or die $!;
         for my $line ( @{$opt->{channel_history}} ) {
             say $fh $line;
         }
@@ -163,135 +157,6 @@ sub get_download_infos {
         exit;
     }
     return $opt, $info;
-}
-
-
-sub _status_not_ok {
-    my ( $opt, $info, $video_id, $col_max, $key_len ) = @_;
-    my @keys    = ( 'status', 'errorcode', 'reason' );
-    my $s_tab   = $key_len + length( ' : ' );
-    my $lf = Text::LineFold->new( %{$opt->{linefold}} );
-    $lf->config( 'ColMax', $col_max );
-    my $status_not_ok_array;
-    for my $key ( @keys ) {
-        next if ! $info->{$video_id}{$key};
-        $info->{$video_id}{$key} =~ s/\n+/\n/g;
-        $info->{$video_id}{$key} =~ s/^\s+//;
-        ( my $kk = $key ) =~ s/_/ /g;
-        my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-        my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-        $text =~ s/\R+\z//;
-        for my $val ( split /\R+/, $text ) {
-            push @$status_not_ok_array, $val . "\n";
-        }
-    }
-    push @{$opt->{download_status_not_ok}}, $video_id . ' - ' . $info->{$video_id}{title};
-    delete $info->{$video_id};
-    return $status_not_ok_array;
-}
-
-
-sub _get_yt_print_info {
-    my ( $opt, $info, $video_id ) = @_;
-    my $message = "** GET download info: ";
-    my $json = get_download_info_as_json( $opt, $video_id, $message );
-    json_to_hash( $json, $info ) if $json;
-    my $info_url = URI->new( 'https://www.youtube.com/get_video_info' );
-    $info_url->query_form( 'video_id' => $video_id );
-    my $res = wrapper_get( $opt, $info_url->as_string );
-    $opt->{up}++;
-    return $info if ! defined $res;
-    for my $item ( split /&/, $res->decoded_content ) {
-        my ( $key, $value ) = split /=/, $item;
-        if ( defined $value && $key =~ /^(?:title|keywords|reason|status)\z/ ) {
-            $info->{$video_id}{$key} = decode_utf8( uri_unescape( $value ) );
-            $info->{$video_id}{$key} =~ s/\+/ /g;
-            $info->{$video_id}{$key} =~ s/(?<=\p{Word}),(?=\p{Word})/, /g if $key eq 'keywords';
-        }
-    }
-    return $info;
-}
-
-
-sub _prepare_print_info {
-    my ( $opt, $info, $video_id ) = @_;
-    $info->{$video_id}{published} = $info->{$video_id}{upload_date};
-    $info->{$video_id}{author}    = $info->{$video_id}{uploader};
-    if ( $info->{$video_id}{author} && $info->{$video_id}{uploader_id} ) {
-        if ( $info->{$video_id}{author} ne $info->{$video_id}{uploader_id} ) {
-            $info->{$video_id}{author} .= ' (' . $info->{$video_id}{uploader_id} . ')';
-        }
-    }
-    my @keys = ( qw( title video_id ) );
-    push @keys, 'extractor' if ! $info->{$video_id}{youtube};
-    push @keys, qw( author duration raters avg_rating view_count published content description keywords );
-    for my $key ( @keys ) {
-        next if ! $info->{$video_id}{$key};
-        $info->{$video_id}{$key} =~ s/\R/ /g;
-    }
-    my $key_len = 13;
-    my $s_tab = $key_len + length( ' : ' );
-    my ( $maxcols, $maxrows ) = term_size();
-    $maxcols -= $opt->{right_margin};
-    my $col_max = $maxcols > $opt->{max_info_width} ? $opt->{max_info_width} : $maxcols;
-    my $lf = Text::LineFold->new( %{$opt->{linefold}} );
-    $lf->config( 'ColMax', $col_max );
-    my $print_array;
-    for my $key ( @keys ) {
-        next if ! length $info->{$video_id}{$key};
-        $info->{$video_id}{$key} =~ s/\n+/\n/g;
-        $info->{$video_id}{$key} =~ s/^\s+//;
-        ( my $kk = $key ) =~ s/_/ /g;
-        my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-        my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-        $text =~ s/\R+\z//;
-        for my $val ( split /\R+/, $text ) {
-            push @$print_array, $val . "\n";
-        }
-    }
-    if ( $opt->{auto_width} ) {
-        my $ratio = @$print_array / $maxrows;
-        my $begin = 0.70;
-        my $end   = 1.50;
-        my $step  = 0.0125;
-        my $div   = ( $end - $begin ) / $step + 1;
-        my $plus;
-        if ( $ratio >= $begin ) {
-            $ratio = $end if $ratio > $end;
-            $plus = int( ( ( $maxcols - $col_max ) / $div ) * ( ( $ratio - $begin  ) / $step + 1 ) );
-        }
-        if ( $plus ) {
-            $col_max += $plus;
-            $lf->config( 'ColMax', $col_max );
-            $print_array = [];
-            for my $key ( @keys ) {
-                next if ! length $info->{$video_id}{$key};
-                ( my $kk = $key ) =~ s/_/ /g;
-                my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-                my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-                $text =~ s/\R+\z//;
-                for my $val ( split /\R+/, $text ) {
-                    push @$print_array, $val . "\n";
-                }
-            }
-        }
-        if ( @$print_array > ( $maxrows - 6 ) ) {
-            $col_max = $maxcols;
-            $lf->config( 'ColMax', $col_max );
-            $print_array = [];
-            for my $key ( @keys ) {
-                next if ! length $info->{$video_id}{$key};
-                ( my $kk = $key ) =~ s/_/ /g;
-                my $pr_key = sprintf "%*.*s : ", $key_len, $key_len, $kk;
-                my $text = $lf->fold( '' , ' ' x $s_tab, $pr_key . $info->{$video_id}{$key} );
-                $text =~ s/\R+\z//;
-                for my $val ( split /\R+/, $text ) {
-                    push @$print_array, $val . "\n";
-                }
-            }
-        }
-    }
-    return $info, $print_array, $col_max, $key_len;
 }
 
 

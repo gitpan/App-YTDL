@@ -33,15 +33,9 @@ sub xml_to_entry_node {
     my $doc = XML::LibXML->load_xml( string => $xml );
     my $root = $doc->documentElement();
     my $xpc = _xml_node_to_xpc( $root );
-    if ( $xpc->exists( '/xmlns:feed/xmlns:entry' ) ) {
-        my @nodes = $xpc->findnodes( '/xmlns:feed/xmlns:entry' ) if $xpc->exists( '/xmlns:feed/xmlns:entry' );
-        return @nodes if @nodes;
-    }
-    else {
-        my ( $node ) = $xpc->findnodes( '/xmlns:entry' );
-        return $node if $node;
-    }
-    return;
+    my $xpath = $xpc->exists( '/xmlns:feed/xmlns:entry' ) ? '/xmlns:feed/xmlns:entry' : '/xmlns:entry';
+    my @nodes = $xpc->findnodes( $xpath );
+    return @nodes;
 }
 
 
@@ -130,22 +124,12 @@ sub json_to_hash {
 
 sub _prepare_info_hash {
     my ( $info, $video_id ) = @_;
-    if ( $info->{$video_id}{duration} ) {
-        if ( $info->{$video_id}{duration} =~ /^[0-9]+\z/ ) {
-            $info->{$video_id}{duration} = sec_to_time( $info->{$video_id}{duration}, 1 );
-        }
+    if ( $info->{$video_id}{duration} =~ /^[0-9]+\z/ ) {
+        $info->{$video_id}{duration} = sec_to_time( $info->{$video_id}{duration}, 1 );
     }
-    else {
-        $info->{$video_id}{duration} = '-:--:--';
-    }
+    $info->{$video_id}{duration} ||= '-:--:--';
     if ( ! $info->{$video_id}{upload_date} ) {
         $info->{$video_id}{upload_date} = '0000-00-00';
-    }
-    if ( ! $info->{$video_id}{uploader} ) {
-        $info->{$video_id}{uploader} = $info->{$video_id}{uploader_id};
-    }
-    if ( ! $info->{$video_id}{uploader_id} ) {
-        $info->{$video_id}{uploader_id} = $info->{$video_id}{playlist_id};
     }
     if ( $info->{$video_id}{like_count} && $info->{$video_id}{dislike_count} ) {
         if ( ! $info->{$video_id}{raters} ) {
@@ -164,10 +148,9 @@ sub _prepare_info_hash {
     if ( $info->{$video_id}{view_count} ) {
         $info->{$video_id}{view_count} = insert_sep( $info->{$video_id}{view_count} );
     }
-    if ( defined $info->{$video_id}{extractor} || defined $info->{$video_id}{extractor_key} ) {
-        $info->{$video_id}{extractor}     = $info->{$video_id}{extractor_key} if ! defined $info->{$video_id}{extractor};
-        $info->{$video_id}{extractor_key} = $info->{$video_id}{extractor}     if ! defined $info->{$video_id}{extractor_key};
-    }
+    $info->{$video_id}{uploader}      //= $info->{$video_id}{uploader_id};
+    $info->{$video_id}{extractor}     //= $info->{$video_id}{extractor_key};
+    $info->{$video_id}{extractor_key} //= $info->{$video_id}{extractor};
 }
 
 

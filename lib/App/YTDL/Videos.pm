@@ -19,6 +19,7 @@ use App::YTDL::Data         qw( wrapper_get get_download_info_as_json );
 use App::YTDL::Data_Extract qw( xml_to_entry_node add_entry_node_to_info_hash json_to_hash );
 
 
+
 sub from_arguments_to_choices {
     my ( $opt, @ids ) = @_;
     my $info = {};
@@ -199,7 +200,7 @@ sub _more_url_to_tmp_info_hash {
             next;
         }
         my $xml = $res->decoded_content;
-        my $e_node = xml_to_entry_node( $opt, $xml );
+        my ( $e_node ) = xml_to_entry_node( $opt, $xml );
         add_entry_node_to_info_hash( $opt, $tmp, $e_node );
     }
     return $tmp;
@@ -238,10 +239,10 @@ sub _choose_videos_and_add_to_info_hash {
         my $index = $#pre;
         my $mark = [];
         my @video_ids = sort {
-            ( $opt->{new_first} ? ( $tmp->{$b}{upload_date} // '' ) cmp ( $tmp->{$a}{upload_date} // '' )
-                                : ( $tmp->{$a}{upload_date} // '' ) cmp ( $tmp->{$b}{upload_date} // '' ) )
-                               || ( $tmp->{$a}{title}     // '' ) cmp ( $tmp->{$b}{title}     // '' ) } keys %$tmp;
-
+               ( $opt->{new_first} ? ( $tmp->{$b}{upload_date} // '' ) cmp ( $tmp->{$a}{upload_date} // '' )
+                                   : ( $tmp->{$a}{upload_date} // '' ) cmp ( $tmp->{$b}{upload_date} // '' ) )
+            || ( $tmp->{$a}{title} // '' ) cmp ( $tmp->{$b}{title} // '' )
+        } keys %$tmp;
 
         VIDEO_ID:
         for my $video_id ( @video_ids ) {

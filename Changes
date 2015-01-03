@@ -1,6 +1,14 @@
 Revision history for App-YTDL
 
 
+0.029   2015-01-03
+        - Removed option "auto_width" (now always on).
+        - Added new option "Extractor directory".
+        - Option "Logging" disabled by default.
+        - Changed the default video directory.
+        - Code refactoring.
+        - Update documentation.
+
 0.028   2014-12-30
         - Bugfix status message in "download_video".
 

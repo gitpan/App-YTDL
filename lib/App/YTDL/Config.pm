@@ -19,277 +19,210 @@ use Term::Choose           qw( choose );
 use Term::ReadLine::Simple qw();
 use Text::LineFold         qw();
 
+use App::YTDL::Helper     qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
+use App::YTDL::YT_Quality qw( map_fmt_to_quality );
 
-use App::YTDL::Helper qw( term_size print_hash encode_fs choose_a_dir choose_a_number insert_sep );
 
 
-sub map_fmt_to_quality {
-    return [
-        [ 13 => ' 176x144  3GP', ],
-        [ 17 => ' 176x144  3GP', ],
-        [ 36 => ' 320x240  3GP', ],
-
-         [ 5 => ' 360x240  FLV', ], # 400
-         [ 6 => ' 480x270  FLV', ],
-        [ 34 => ' 640x360  FLV', ],
-        [ 35 => ' 854x480  FLV', ],
-
-        [ 18 => ' 640x360  MP4', ],
-        [ 22 => '1280x720  MP4', ],
-        [ 37 => '1920x1080 MP4', ],
-        [ 38 => '4096x3072 MP4', ],
-
-        [ 43 => ' 640x360  WebM', ],
-        [ 44 => ' 854x480  WebM', ],
-        [ 45 => '1280x720  WebM', ],
-        [ 46 => '1920x1080 WebM', ],
-
-        [ 82 => ' 640x360  MP4_3D', ],
-        [ 83 => ' 854x480  MP4_3D', ],
-        [ 84 => '1280x720  MP4_3D', ],
-        [ 85 => '1920x1080 MP4_3D', ],
-
-        [ 100 => ' 640x360  WebM_3D', ],
-        [ 101 => ' 854x480  WebM_3D', ],
-        [ 102 => '1280x720  WebM_3D', ],
-
-         [ 92 => 'HLS  240  MP4', ],
-         [ 93 => 'HLS  360  MP4', ],
-         [ 94 => 'HLS  480  MP4', ],
-         [ 95 => 'HLS  720  MP4', ],
-         [ 96 => 'HLS 1080  MP4', ],
-        [ 132 => 'HLS  240  MP4', ],
-        [ 151 => 'HLS   72  MP4', ],
-
-        [ 139 => 'DASH audio   48  M4A', ],
-        [ 140 => 'DASH audio  128  M4A', ],
-        [ 141 => 'DASH audio  256  M4A', ],
-
-        [ 171 => 'DASH audio  128 WebM', ],
-        [ 172 => 'DASH audio  256 WebM', ],
-
-        [ 133 => 'DASH video  240  MP4', ],
-        [ 134 => 'DASH video  360  MP4', ],
-        [ 135 => 'DASH video  480  MP4', ],
-        [ 136 => 'DASH video  720  MP4', ],
-        [ 137 => 'DASH video 1080  MP4', ],
-        [ 138 => 'DASH video 2160  MP4', ],
-
-        [ 160 => 'DASH video  144  MP4',],
-        [ 264 => 'DASH video 1440  MP4',],
-        [ 298 => 'DASH video  720  MP4 h264 60fps', ],
-        [ 299 => 'DASH video 1080  MP4 h264 60fps', ],
-        [ 266 => 'DASH video 2160  MP4 h264', ],
-
-        [ 167 => 'DASH video  360x640  WebM VP8', ],
-        [ 168 => 'DASH video  480x854  WebM VP8', ],
-        [ 169 => 'DASH video  720x1280 WebM VP8', ],
-        [ 170 => 'DASH video 1080x1920 WebM VP8', ],
-        [ 218 => 'DASH video  480x854  WebM VP8', ],
-        [ 219 => 'DASH video  480x854  WebM VP8', ],
-
-        [ 242 => 'DASH video  240 WebM', ],
-        [ 243 => 'DASH video  360 WebM', ],
-        [ 244 => 'DASH video  480 WebM', ],
-        [ 245 => 'DASH video  480 WebM', ],
-        [ 246 => 'DASH video  480 WebM', ],
-        [ 247 => 'DASH video  720 WebM', ],
-        [ 248 => 'DASH video 1080 WebM', ],
-        [ 271 => 'DASH video 1440 WebM', ],
-        [ 272 => 'DASH video 2160 WebM', ],
-
-        [ 278 => 'DASH video  144 WebM VP9', ],
-        [ 302 => 'DASH video  720 WebM VP9', ],
-        [ 303 => 'DASH video 1080 WebM VP9', ],
-    ];
+sub _menus {
+    my $menus = {
+        main => [
+            [ 'show_help_text',  "  HELP"      ],
+            [ 'show_path',       "  PATH"      ],
+            [ 'group_download',  "- Download"  ],
+            [ 'group_quality',   "- Quality"   ],
+            [ 'group_history',   "- History"   ],
+            [ 'group_directory', "- Directory" ],
+            [ 'group_output',    "- Output"    ],
+        ],
+        group_download => [
+            [ 'useragent',      "- UserAgent"           ],
+            [ 'overwrite',      "- Overwrite"           ],
+            [ 'max_len_f_name', "- Max filename length" ],
+            [ 'retries',        "- Download retries"    ],
+            [ 'timeout',        "- Timeout"             ],
+        ],
+        group_quality => [
+            [ 'auto_quality', "- Auto quality mode"   ],
+            [ 'preferred',    "- Preferred qualities" ],
+        ],
+        group_history => [
+            [ 'log_info',     "- Logging"         ],
+            [ 'max_channels', "- Channel history" ],
+        ],
+        group_directory => [
+            [ 'video_dir',     "- Video directory"     ],
+            [ 'extractor_dir', "- Extractor directory" ],
+            [ 'channel_dir',   "- Channel directory"   ],
+        ],
+        group_output => [
+            [ 'max_info_width', "- Max info width" ],
+            [ 'kb_sec_len',     "- Digits 'k/s'"   ],
+            [ 'new_first',      "- Sort order"     ],
+        ],
+    };
+    return $menus;
 }
 
 
 sub set_options {
     my ( $opt ) = @_;
-    my $help         = "  HELP";
-    my $show_path    = "  PATH";
-    my $useragent    = "- UserAgent";
-    my $overwrite    = "- Overwrite";
-    my $auto_fmt     = "- Auto quality mode";
-    my $preferred    = "- Preferred qualities";
-    my $retries      = "- Download retries";
-    my $timeout      = "- Timeout";
-    my $logging      = "- Logging";
-    my $info_width   = "- Max info width";
-    my $auto_width   = "- Auto width";
-    my $filename_len = "- Max filename length";
-    my $len_kb_sec   = "- Digits 'k/s'";
-    my $yt_video_dir = "- Video directory";
-    my $channel_hist = "- Channel history";
-    my $channel_dir  = "- Channel directory";
-    my $new_first    = "- Sort order";
-    my %c_hash = (
-        $help         => 'show_help_text',
-        $show_path    => 'show_path',
-        $useragent    => 'useragent',
-        $overwrite    => 'overwrite',
-        $auto_fmt     => 'auto_quality',
-        $preferred    => 'preferred',
-        $retries      => 'retries',
-        $timeout      => 'timeout',
-        $logging      => 'log_info',
-        $info_width   => 'max_info_width',
-        $auto_width   => 'auto_width',
-        $filename_len => 'max_len_f_name',
-        $len_kb_sec   => 'kb_sec_len',
-        $yt_video_dir => 'yt_video_dir',
-        $channel_hist => 'max_channels',
-        $channel_dir  => 'channel_dir',
-        $new_first    => 'new_first',
-    );
-    my @choices = (
-        $help,
-        $show_path,
-        $useragent,
-        $overwrite,
-        $auto_fmt,
-        $preferred,
-        $retries,
-        $timeout,
-        $logging,
-        $info_width,
-        $auto_width,
-        $filename_len,
-        $len_kb_sec,
-        $yt_video_dir,
-        $channel_hist,
-        $channel_dir,
-        $new_first,
-    );
-    my $continue = '  ' . $opt->{continue};
-    my $quit     = '  ' . $opt->{quit};
+    my $menus = _menus();
+    my @keys;
+    for my $group ( keys %$menus ) {
+        next if $group eq 'main';
+        push @keys, map { $_->[0] } @{$menus->{$group}};
+    }
+    my $group = 'main';
 
-    OPTION: while ( 1 ) {
-        # Choose
-        print "\n";
-        my $c_key = choose(
-            [ undef, $continue, @choices ],
-            { prompt => "Options:", layout => 3, clear_screen => 1, undef => $quit }
-        );
-        if ( ! defined $c_key ) {
-            _write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
-            exit();
-        }
-        if ( $c_key eq $continue ) {
-            _write_config_file( $opt, $opt->{config_file}, values %c_hash ) if $opt->{change};
-            delete $opt->{change};
-            last OPTION;
-        }
-        my $choice = $c_hash{$c_key};
-        if ( $choice eq "show_help_text" ) {
-            pod2usage( { -exitval => 'NOEXIT', -verbose => 2 } );
-        }
-        elsif ( $choice eq "show_path" ) {
-            my $version      = '  version  ';
-            my $bin          = '    bin    ';
-            my $yt_video_dir = ' video dir ';
-            my $log_file     = ' log file  ';
-            my $config_file  = 'config file';
-            my $path = {
-                $version      => $main::VERSION,
-                $bin          => catfile( $RealBin, $RealScript ),
-                $yt_video_dir => $opt->{yt_video_dir},
-                $log_file     => $opt->{log_file},
-                $config_file  => $opt->{config_file},
-            };
-            my $keys = [ $version, $bin, $yt_video_dir, $log_file, $config_file ];
-            print_hash( $path, { keys => $keys, preface => ' Close with ENTER' } );
-        }
-        elsif ( $choice eq "useragent" ) {
-            my $prompt = 'Set the UserAgent: ';
-            _local_read_line( $opt, $choice, $prompt );
-            $opt->{useragent} = 'Mozilla/5.0' if $opt->{useragent} eq '';
-            $opt->{useragent} = ''            if $opt->{useragent} eq '""';
-        }
-        elsif ( $choice eq "overwrite" ) {
-            my $prompt = 'Overwrite files';
-            _opt_yes_no( $opt, $choice, $prompt );
-        }
-        elsif ( $choice eq "log_info" ) {
-            my $prompt = 'Enable info-logging';
-            _opt_yes_no( $opt, $choice, $prompt );
-        }
-        elsif ( $choice eq "auto_quality" ) {
-            my $prompt = 'Auto quality';
-            my $list = [
-                'choose always manually',
-                'keep choice for the respective Playlist/Channel if possible',
-                'keep choice always if possible',
-                'use preferred qualities',
-                'use always default (best) quality',
-            ];
-            _opt_choose_from_list( $opt, $choice, $prompt, $list );
-        }
-        elsif ( $choice eq "preferred" ) {
-            my ( $hash, $keys );
-            my $ref = map_fmt_to_quality();
-            for my $ar ( @$ref ) {
-                $hash->{$ar->[0]} = $ar->[1];
-                push @$keys, $ar->[0];
+    GROUP: while ( 1 ) {
+        my $menu = $menus->{$group};
+
+        OPTION: while ( 1 ) {
+            my $back     = '  QUIT';
+            my $continue = $group eq 'main' ? '  CONTINUE' : '  MENU';
+            my @pre  = ( undef, $continue );
+            my @real = map( $_->[1], @$menu );
+            # Choose
+            my $idx = choose(
+                [ @pre, @real ],
+                { prompt => "Options:", layout => 3, index => 1, clear_screen => 1, undef => $back }
+            );
+            if ( ! defined $idx ) {
+                _write_config_file( $opt, $opt->{config_file}, @keys );
+                exit;
             }
-            _opt_choose_a_list( $opt, $choice, $hash, $keys );
+            my $choice = $idx <= $#pre ? $pre[$idx] : $menu->[$idx - @pre][0];
+            if ( ! defined $choice ) {
+                _write_config_file( $opt, $opt->{config_file}, @keys );
+                exit;
+            }
+            if ( $choice =~ /^group_/ ) {
+                $group = $choice;
+                redo GROUP;
+            }
+            if ( $choice eq $continue ) {
+                if ( $group =~ /^group_/ ) {
+                    $group = 'main';
+                    redo GROUP;
+                }
+                _write_config_file( $opt, $opt->{config_file}, @keys );
+                delete $opt->{change};
+                last GROUP;
+            }
+            if ( $choice eq "show_help_text" ) {
+                pod2usage( { -exitval => 'NOEXIT', -verbose => 2 } );
+            }
+            elsif ( $choice eq "show_path" ) {
+                my $version     = '  version  ';
+                my $bin         = '    bin    ';
+                my $video_dir   = ' video dir ';
+                my $config_dir  = 'config dir ';
+                my $path = {
+                    $version    => $main::VERSION,
+                    $bin        => catfile( $RealBin, $RealScript ),
+                    $video_dir  => $opt->{video_dir},
+                    $config_dir => $opt->{config_dir},
+
+                };
+                my $keys = [ $version, $bin, $video_dir, $config_dir ];
+                print_hash( $path, { keys => $keys, preface => ' Close with ENTER' } );
+            }
+            elsif ( $choice eq "useragent" ) {
+                my $prompt = 'Set the UserAgent: ';
+                _local_read_line( $opt, $choice, $prompt );
+                $opt->{useragent} = 'Mozilla/5.0' if $opt->{useragent} eq '';
+                $opt->{useragent} = ''            if $opt->{useragent} eq '""';
+            }
+            elsif ( $choice eq "overwrite" ) {
+                my $prompt = 'Overwrite files';
+                _opt_yes_no( $opt, $choice, $prompt );
+            }
+            elsif ( $choice eq "log_info" ) {
+                my $prompt = 'Enable info-logging';
+                _opt_yes_no( $opt, $choice, $prompt );
+            }
+            elsif ( $choice eq "auto_quality" ) {
+                my $prompt = 'Auto quality';
+                my $list = [
+                    'choose always manually',
+                    'keep choice for the respective Playlist/Channel if possible',
+                    'keep choice always if possible',
+                    'use preferred qualities',
+                    'use always default (best) quality',
+                ];
+                _opt_choose_from_list( $opt, $choice, $prompt, $list );
+            }
+            elsif ( $choice eq "preferred" ) {
+                my ( $hash, $keys );
+                my $ref = map_fmt_to_quality();
+                for my $ar ( @$ref ) {
+                    $hash->{$ar->[0]} = $ar->[1];
+                    push @$keys, $ar->[0];
+                }
+                _opt_choose_a_list( $opt, $choice, $hash, $keys );
+            }
+            elsif ( $choice eq "retries" ) {
+                my $prompt = 'Download retries';
+                my $digits = 3;
+                _opt_number_range( $opt, $choice, $prompt, 3 )
+            }
+            elsif ( $choice eq "timeout" ) {
+                my $prompt = 'Connection timeout (s)';
+                my $digits = 3;
+                _opt_number_range( $opt, $choice, $prompt, 3 )
+            }
+            elsif ( $choice eq "max_info_width" ) {
+                my $prompt = 'Maximum Info width';
+                my $digits = 3;
+                _opt_number_range( $opt, $choice, $prompt, 3 )
+            }
+            elsif ( $choice eq "max_len_f_name" ) {
+                my $prompt = 'Maximum filename length';
+                my $digits = 3;
+                _opt_number_range( $opt, $choice, $prompt, 3 )
+            }
+            elsif ( $choice eq "kb_sec_len" ) {
+                my ( $min, $max ) = ( 3, 9 );
+                my $prompt = 'Digits for "k/s" (download speed)';
+                _opt_number( $opt, $choice, $prompt, $min, $max );
+            }
+            elsif ( $choice eq "video_dir" ) {
+                my $prompt = 'Video directory';
+                _opt_choose_a_directory( $opt, $choice, $prompt );
+            }
+            elsif ( $choice eq "max_channels" ) {
+                my $prompt = 'Channelhistory: save x channels. Disabled if x is 0';
+                my $digits = 3;
+                _opt_number_range( $opt, $choice, $prompt, 3 )
+            }
+            elsif ( $choice eq "extractor_dir" ) {
+                my $prompt = 'Use extractor directory';
+                my $list = [
+                    'No',
+                    'Yes',
+                ];
+                _opt_choose_from_list( $opt, $choice, $prompt, $list );
+            }
+            elsif ( $choice eq "channel_dir" ) {
+                my $prompt = 'Use channel directory';
+                my $list = [
+                    'No',
+                    'If chosen from a channel or list',
+                    'Always',
+                ];
+                _opt_choose_from_list( $opt, $choice, $prompt, $list );
+            }
+            elsif ( $choice eq "new_first" ) {
+                my $prompt = 'Latest videos on top of the list';
+                _opt_yes_no( $opt, $choice, $prompt );
+            }
+            else { die $choice }
         }
-        elsif ( $choice eq "retries" ) {
-            my $prompt = 'Download retries';
-            my $digits = 3;
-            _opt_number_range( $opt, $choice, $prompt, 3 )
-        }
-        elsif ( $choice eq "timeout" ) {
-            my $prompt = 'Connection timeout (s)';
-            my $digits = 3;
-            _opt_number_range( $opt, $choice, $prompt, 3 )
-        }
-        elsif ( $choice eq "max_info_width" ) {
-            my $prompt = 'Maximum Info width';
-            my $digits = 3;
-            _opt_number_range( $opt, $choice, $prompt, 3 )
-        }
-        elsif ( $choice eq "auto_width" ) {
-            my $prompt = 'Enable auto width';
-            _opt_yes_no( $opt, $choice, $prompt );
-        }
-        elsif ( $choice eq "max_len_f_name" ) {
-            my $prompt = 'Maximum filename length';
-            my $digits = 3;
-            _opt_number_range( $opt, $choice, $prompt, 3 )
-        }
-        elsif ( $choice eq "kb_sec_len" ) {
-            my ( $min, $max ) = ( 3, 9 );
-            my $prompt = 'Digits for "k/s" (download speed)';
-            _opt_number( $opt, $choice, $prompt, $min, $max );
-        }
-        elsif ( $choice eq "yt_video_dir" ) {
-            my $prompt = 'Video directory';
-            _opt_choose_a_directory( $opt, $choice, $prompt );
-        }
-        elsif ( $choice eq "max_channels" ) {
-            my $prompt = 'Channelhistory: save x channels. Disabled if x is 0';
-            my $digits = 3;
-            _opt_number_range( $opt, $choice, $prompt, 3 )
-        }
-        elsif ( $choice eq "channel_dir" ) {
-            my $prompt = 'Use channel directory';
-            my $list = [
-                'No',
-                'If chosen from a channel or list',
-                'Always',
-            ];
-            _opt_choose_from_list( $opt, $choice, $prompt, $list );
-        }
-        elsif ( $choice eq "new_first" ) {
-            my $prompt = 'Latest videos on top of the list';
-            _opt_yes_no( $opt, $choice, $prompt );
-        }
-        else { die $choice }
     }
     return;
 }
+
 
 sub _opt_choose_a_directory {
     my( $opt, $choice, $prompt ) = @_;
@@ -330,7 +263,7 @@ sub _opt_yes_no {
     # Choose
     my $choice = choose(
         [ undef, $yes, $no ],
-        { prompt => $prompt . ' [' . $current . ']:', layout => 1, undef => $opt->{s_back} }
+        { prompt => $prompt . ' [' . $current . ']:', layout => 1, undef => '<<' }
     );
     return if ! defined $choice;
     $opt->{$section} = $choice eq $yes ? 1 : 0;
@@ -352,20 +285,20 @@ sub _opt_number_range {
 }
 
 
-
 sub _opt_number {
     my ( $opt, $section, $prompt, $min, $max ) = @_;
     my $current = $opt->{$section};
     # Choose
     my $choice = choose(
         [ undef, $min .. $max ],
-        { prompt => $prompt . ' [' . $current . ']:', layout => 1, justify => 1, order => 0, undef => $opt->{s_back} }
+        { prompt => $prompt . ' [' . $current . ']:', layout => 1, justify => 1, order => 0, undef => '<<' }
     );
     return if ! defined $choice;
     $opt->{$section} = $choice;
     $opt->{change}++;
     return;
 }
+
 
 sub _opt_choose_from_list {
     my ( $opt, $section, $prompt, $list ) = @_;
@@ -375,13 +308,14 @@ sub _opt_choose_from_list {
         push @options, sprintf "%*d => %s", $len, $i, $list->[$i];
     }
     $prompt .= ' [' . ( $opt->{$section} // '--' ) . ']';
-    my $value = choose( [ undef, @options ], { prompt => $prompt, layout => 3, undef => $opt->{s_back} } );
+    my $value = choose( [ undef, @options ], { prompt => $prompt, layout => 3, undef => '<<' } );
     return if ! defined $value;
     $value = ( split / => /, $value )[0];
     $opt->{$section} = $value;
     $opt->{change}++;
     return;
 }
+
 
 sub _opt_choose_a_list {
     my ( $opt, $section, $ref, $keys ) = @_;
@@ -398,13 +332,14 @@ sub _opt_choose_a_list {
     my $lf      = Text::LineFold->new( %{$opt->{line_fold}} );
     $lf->config( 'ColMax', ( term_size() )[0] );
     while ( 1 ) {
+        my $confirm = 'CONFIRM';
         my $prompt = $key_cur . join( ', ', @$current ) . "\n";
         $prompt   .= $key_new . join( ', ', @$new )     . "\n\n";
         $prompt   .= 'Choose:';
         # Choose
         my $val = choose(
-            [ undef, $opt->{confirm}, map( "  $_", @$available ) ],
-            { prompt => $prompt, lf => [0,$l_k], layout => 3, clear_screen => 1, undef => $opt->{back} }
+            [ undef, $confirm, map( "  $_", @$available ) ],
+            { prompt => $prompt, lf => [0,$l_k], layout => 3, clear_screen => 1, undef => 'BACK' }
         );
         if ( ! defined $val ) {
             if ( @$new ) {
@@ -415,7 +350,7 @@ sub _opt_choose_a_list {
                 return;
             }
         }
-        if ( $val eq $opt->{confirm} ) {
+        if ( $val eq $confirm ) {
             if ( @$new ) {
                 $opt->{$section} = $new;
                 $opt->{change}++;
@@ -428,8 +363,10 @@ sub _opt_choose_a_list {
     }
 }
 
+
 sub _write_config_file {
     my ( $opt, $file, @keys ) = @_;
+    return if ! $opt->{change};
     my $tmp = {};
     for my $section ( sort @keys ) {
         $tmp->{$section} = $opt->{$section};
@@ -450,7 +387,7 @@ sub read_config_file {
 
 sub _write_json {
     my ( $file, $h_ref ) = @_;
-    my $json = JSON::XS->new->pretty->encode( $h_ref );
+    my $json = JSON::XS->new->pretty->utf8->encode( $h_ref );
     open my $fh, '>', encode_fs( $file ) or die $!;
     print $fh $json;
     close $fh;
@@ -463,7 +400,7 @@ sub _read_json {
     open my $fh, '<', encode_fs( $file ) or die $!;
     my $json = do { local $/; <$fh> };
     close $fh;
-    my $h_ref = JSON::XS->new->pretty->decode( $json ) if $json;
+    my $h_ref = JSON::XS->new->pretty->utf8->decode( $json ) if $json;
     return $h_ref;
 }
 

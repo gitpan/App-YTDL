@@ -2,9 +2,11 @@
 use warnings;
 use strict;
 use 5.010000;
+use utf8;
 
-our $VERSION = '0.028';
+our $VERSION = '0.029';
 
+use Encode                qw( decode );
 use File::Spec::Functions qw( catdir catfile curdir );
 use Getopt::Long          qw( GetOptions );
 use Pod::Usage            qw( pod2usage );
@@ -35,52 +37,39 @@ my ( $arg_file, $help );
 GetOptions( 'f|file=s@' => \$arg_file, 'h|?|help' => \$help )
 or pod2usage( -message => $!, -verbose => 99, -sections => "SYNOPSIS" );
 
-my $my_videos    = File::HomeDir->my_videos;
-my $my_data      = File::HomeDir->my_data;
-my $my_home      = File::HomeDir->my_home;
-my $yt_video_dir = catdir $my_videos || $my_data || curdir, 'YouTube';
 
-my $config_dir;
-if ( $my_data ) {
-    $config_dir = catdir $my_data, 'yt_download';
-}
-else {
-    $config_dir = catdir $my_home || curdir, '.yt_download';
-}
-if ( ! -d $config_dir ) {
-    mkdir $config_dir or die $!;
-}
+my $my_data    = decode( 'locale_fs', File::HomeDir->my_data   || curdir );
+my $my_videos  = decode( 'locale_fs', File::HomeDir->my_videos || curdir );
+my $config_dir = catdir $my_data, 'yt_download';
 
+if ( ! -d encode_fs( $config_dir ) ) {
+    mkdir encode_fs( $config_dir ) or die $!;
+}
 
 my $opt = {
-    back           => 'BACK',
-    s_back         => '<<',
-    next           => 'NEXT',
-    quit           => 'QUIT',
-    confirm        => 'CONFIRM',
-    continue       => 'CONTINUE',
     useragent      => 'Mozilla/5.0',
-    yt_video_dir    => $yt_video_dir,
+    video_dir      => $my_videos,
+    config_dir     => $config_dir,
     config_file    => catfile( $config_dir, 'yt_config.txt' ),
     log_file       => catfile( $config_dir, 'yt_download.log' ),
+    log_info       => 0,
     c_history_file   => catfile( $config_dir, 'yt_channel_history.txt' ),
     c_history_sticky => catfile( $config_dir, 'yt_channel_sticky.txt' ),
-    log_info       => 1,
-    linefold       => { Charset => 'utf-8', Newline => "\n", OutputCharset => '_UNICODE_', Urgent => 'FORCE' },
     max_len_f_name => 62,
+    linefold       => { Charset => 'utf-8', Newline => "\n", OutputCharset => '_UNICODE_', Urgent => 'FORCE' },
     yt_api_v       => 2,
     invalid_char   => quotemeta( '#$&+,/:;=?@' ),
     yt_regexp      => qr/(?:youtube|youtu\.be|yourepeat|tube\.majestyc)/i,
     kb_sec_len     => 5,
     max_info_width => 120,
     right_margin   => $^O eq 'MSWin32' ? 1 : 2,
-    auto_width     => 1,
     retries        => 5,
     timeout        => 15,
     overwrite      => 0,
     auto_quality   => 1,
     preferred      => [ 43 ],
     max_channels   => 15,
+    extractor_dir  => 1,
     channel_dir    => 1,
     new_first      => 1,
     error_get_download_infos => [],
@@ -88,13 +77,9 @@ my $opt = {
     incomplete_download      => [],
 };
 
-
 read_config_file( $opt, $opt->{config_file} );
 if ( $help ) {
     set_options( $opt );
-}
-if ( ! -d $opt->{yt_video_dir} ) {
-    mkdir $opt->{yt_video_dir} or die $!;
 }
 
 try {
@@ -158,7 +143,7 @@ sub _read_history_files {
     $opt->{channel_history} = [];
     if ( $opt->{max_channels} ) {
         if ( -e $opt->{c_history_sticky} ) {
-            open my $fh, '<', $opt->{c_history_sticky} or die $!;
+            open my $fh, '<:encoding(UTF-8)', encode_fs( $opt->{c_history_sticky} ) or die $!;
             while ( my $line = <$fh> ) {
                 chomp $line;
                 next if $line =~ /^\s+\z/;
@@ -167,7 +152,7 @@ sub _read_history_files {
             close $fh;
         }
         if ( -e $opt->{c_history_file} ) {
-            open my $fh, '<', $opt->{c_history_file} or die $!;
+            open my $fh, '<:encoding(UTF-8)', encode_fs( $opt->{c_history_file} ) or die $!;
             while ( my $line = <$fh> ) {
                 chomp $line;
                 next if $line =~ /^\s+\z/;
@@ -214,7 +199,7 @@ sub _gather_arguments {
                 my $prompt = 'Channels:' . "\n";
                 CHANNEL: while ( 1 ) {
                     my @pre = ( undef, '  CONFIRM' );
-                    my $choices = [ @pre, map( "* $_", @sticky ), map( "  $_", @history ), '  RESET' ];
+                    my $choices = [ @pre, map( "* $_", @sticky ), map( "  $_", @history ) ];
                     # Choose
                     my @indexes = choose(
                         $choices,
@@ -240,10 +225,6 @@ sub _gather_arguments {
                             }
                         }
                         last MENU;
-                    }
-                    elsif ( $indexes[0] == $#$choices ) {
-                        @ids = ();
-                        $prompt = 'Channels:' . "\n";
                     }
                     else {
                         for my $i ( @indexes ) {
@@ -282,12 +263,12 @@ sub _gather_arguments {
                     }
                     elsif ( $idx == 1 ) {
                         if ( $changed ) {
-                            open my $fh_sticky, '>', $opt->{c_history_sticky} or die $!;
+                            open my $fh_sticky, '>:encoding(UTF-8)', encode_fs( $opt->{c_history_sticky} ) or die $!;
                             for my $line ( @{$opt->{channel_sticky}} ) {
                                 say $fh_sticky $line;
                             }
                             close $fh_sticky;
-                            open my $fh_history, '>', $opt->{c_history_file} or die $!;
+                            open my $fh_history, '>:encoding(UTF-8)', encode_fs( $opt->{c_history_file} ) or die $!;
                             for my $line ( @{$opt->{channel_history}} ) {
                                 say $fh_history $line;
                             }
@@ -336,7 +317,7 @@ yt-download - Download YouTube videos.
 
 =head1 VERSION
 
-Version 0.028
+Version 0.029
 
 =cut
 
@@ -346,30 +327,28 @@ Version 0.028
 
     yt-download
 
-    yt-download url|id [url|id ...]
+    yt-download url [url ...]
 
     yt-download -f|--file filename
 
-When passing only the id instead of the entire url it is needed to prefix every playlist id with C<p#> and
-every channel id with C<c#>.
+The urls can be entered after calling C<yt-download> - this is useful if urls contain shell metacharacters like C<&>.
 
-Video ids are passed without any prefix.
-
-The ids/urls can be entered after calling C<yt-download> - this is useful if urls contain shell metacharacters
-like C<&>.
-
-The ids/urls can also be passed with a file: C<yt-download -f|--file filename>. The urls/id in the file have to be space
+The urls can also be passed with a file: C<yt-download -f|--file filename>. The urls in the file have to be space
 separated.
+
+If the extractor is YouTube, it is possible to pass ids instead of the entire urls. When passing only an id it is
+required to prefix every playlist id with C<p#> and every channel id with C<c#>. Video ids are passed without any prefix.
 
 =head1 DESCRIPTION
 
-Download single YouTube videos or/and choose videos from playlists or/and channels.
+Download single videos or/and choose videos from playlists or/and channels.
 
 When choosing from a channel or list it is possible to filter the displayed items with a regexp.
 
 Before the download the script shows some video info and lets you choose the video quality from the available qualities.
 
-Instead of choosing the quality manually it is possible to set and use preferred qualities.
+Instead of choosing the quality manually it is possible to set and use preferred qualities. I<Preferred qualities> are
+only valid for Youtube videos.
 
 To set the different options call C<yt-download -h>.
 
@@ -388,24 +367,41 @@ Shows this HELP text.
 
 =head2 PATH
 
-Shows the version and the path of the running C<yt-download> and the path of the video directory, of the log file and of
-the configuration file.
+Shows the version and the path of the running C<yt-download> and the path of the video directory and of the
+configuration directory.
 
-=head2 UserAgent
+=head2 Download
 
-Sets the useragent.
+=head3 UserAgent
+
+Set the useragent.
 
 If entered nothing the default useragent (Mozilla/5.0) is used.
 
-=head2 Overwrite
+=head3 Overwrite
 
 If I<Overwrite> is enabled, existing files are overwritten.
 
 If not enabled C<yt-download> appends to partially downloaded file with the same name.
 
-=head2 Auto quality mode
+=head3 Max filename length
 
-Sets the auto quality (fmt) mode:
+Set the maximum length of the filename. Filenames longer as the maximum length are truncated.
+
+=head3 Download retries
+
+Set the number of download retries.
+
+=head3 Timeout
+
+I<Timeout> (seconds) is used as the value for the C<youtube-dl> parameter C<--socket-timeout>. I<timeout> is also used
+as the value for the L<LWP::UserAgent> option C<timeout> when fetching the data required for the video download.
+
+=head2 Quality
+
+=head3 Auto quality mode
+
+Set the auto quality (fmt) mode:
 
 =over
 
@@ -423,80 +419,85 @@ mode 2: keep the first chosen quality for all downloads if possible.
 
 =item
 
-mode 3: use preferred qualities.
+mode 3: use preferred qualities (YouTube only).
 
 =item
 
-mode 4: use always default (best) quality.
+mode 4: use always the default (best) quality.
 
 =back
 
-=head2 Preferred qualities
+=head3 Preferred qualities
 
-Sets the preferred qualities (fmts)
+Set the preferred qualities (fmts) for YouTube videos.
 
-=head2 Download retries
+=head2 History
 
-Sets the number of download retries.
+=head3 Logging
 
-=head2 Connection timeout
+Enable info logging.
 
-I<timeout> (seconds) is used as the value for the C<youtube-dl> parameter C<--socket-timeout>. I<timeout> is also used
-as the value for the L<LWP::UserAgent> option C<timeout> when fetching the data required for the video download.
+=head3 Channel history
 
-=head2 Logging
+Channel history works only for YouTube videos.
 
-Enables info logging.
+If I<Channel history> is set to "0" the channel history is disabled else the set value tells how many channels should be
+saved in the channel history file (channels made sticky don't count).
 
-=head2 Max info width
+If no arguments are passed to C<yt-download> the user can choose from the channels saved in the channel-history file and
+the channel-sticky file.
 
-Sets the maximum width of video info output.
+=head2 Directory
 
-=head2 Auto width
+=head3 Video directory
 
-Increase the info output width automatically if the info text is long.
+Choose an alternative video directory.
 
-=head2 Max filename length
-
-Sets the maximum length of the filename. Filenames longer as the maximum length are truncated.
-
-=head2 Digits for "k/s"
-
-Sets the number of digits allocated for the "kilobyte per seconds" template.
-
-=head2 Video directory
-
-Choose an alternative YouTube video directory.
-
-=head2 Channel history
-
-How many channels should be saved in the channel history file (channels made sticky don't count). Setting
-I<Channel history> to "0" disables the channel history.
-
-If no arguments are passed to C<yt-download> the user can choose from the channels saved in the channel history file and
-channel sticky file.
-
-=head2 Channel directory
+=head2 Extractor directory
 
 =over
 
 =item
 
-0 => Don't use channel directories.
+0 => No.
 
 =item
 
-1 => Use channel directories if the video is chosen from a channel or a list.
-
-=item
-
-2 => Use always channel directories.
+1 => Create/use extractor directories.
 
 =back
 
-=head2 Sort order
+=head3 Channel directory
 
-If set to "YES" the latest videos from a channel/list are on top of the menu else they are at the end of the menu.
+=over
+
+=item
+
+0 => Don't create/use channel directories.
+
+=item
+
+1 => Create/use channel directories if the video is chosen from a channel or a list.
+
+=item
+
+2 => Always create/use channel directories.
+
+=back
+
+=head2 Output
+
+=head3 Max info width
+
+Set the maximum width of video info output.
+
+=head3 Digits for "k/s"
+
+Set the number of digits allocated for the "kilobyte per seconds" template.
+
+=head3 Sort order
+
+If set to "YES" the latest videos from a channel/list are on top of the list menu else they are at the end of the menu.
 
 =head1 REQUIREMENTS
 

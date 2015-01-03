@@ -111,25 +111,23 @@ sub _download_video {
             my $file_size = -s $file_name_OS // -1;
             $avg_speed = sprintf "avg %2sk/s", $p->{kbs_avg} || '--';
             if ( $p->{total} ) {
-                my $length_total_mb = length( int( $p->{total} / 1024 ** 2 ) ) + 2;
-                $size = ' ' x ( $length_total_mb + 2 );
-                $at   = ' ' x ( $length_total_mb + 3 );
                 if ( $file_size != $p->{total} ) {
                     my $pr_total = insert_sep( $p->{total} );
                     $incomplete = sprintf " Incomplete: %*s/%s ", length( $pr_total ), insert_sep( $file_size ), $pr_total;
                     $retries    = sprintf "%*s/%s", length $opt->{retries}, $try, $opt->{retries};
                 }
+                my $length_total_mb = length( int( $p->{total} / 1024 ** 2 ) ) + 2;
+                $size = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
+                $at   = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
                 if ( $status == 416 ) {
-                    $dl_time = '';
-                    $at = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
-                    $avg_speed =  '';
+                    $dl_time   = '';
+                    $size      = ' ' x ( $length_total_mb + 2 );
+                    $avg_speed = '';
                 }
                 if ( $status == 206 ) {
-                    $size = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
-                    $at = sprintf "@%*.2fM", $length_total_mb, $p->{size} / 1024 ** 2;
                 }
                 if ( $status =~ 200 ) {
-                    $size = sprintf "%*.2fM", $length_total_mb, $file_size / 1024 ** 2;
+                    $at        = ' ' x ( $length_total_mb + 3 );
                     $pr_status = ' ' x 10;
                 }
             }
@@ -174,8 +172,8 @@ sub _log_info {
     my ( $sec, $min, $hour, $mday, $mon, $year ) = localtime;
     my $log_str = sprintf( "%04d-%02d-%02d %02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min )
         . '>  ' . sprintf( "%11s", $info->{$video_id}{youtube} ? $video_id : ( $info->{$video_id}{extractor_key} // '' ) . ' ' . ( $info->{$video_id}{id} // '' ) )
-        . ' | ' . ( $info->{$video_id}{uploader_id} // '------' )
-        . ' | ' . ( $info->{$video_id}{playlist_id} // '----------' )
+        . ' | ' . ( $info->{$video_id}{uploader_id} // 'xxxxx' )
+        . ' | ' . ( $info->{$video_id}{playlist_id} // '-----' )
         . ' | ' . ( $info->{$video_id}{upload_date} // '0000-00-00' )
         . '   ' . basename( $info->{$video_id}{file_name} );
     open my $log, '>>:encoding(UTF-8)', encode_fs( $opt->{log_file} ) or die $!;

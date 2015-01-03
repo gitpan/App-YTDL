@@ -40,7 +40,7 @@ sub wrapper_get {
             say "$count/$opt->{retries}  $_";
             $count++;
             $not_ok = 1;
-            sleep $opt->{retries} * 2;
+            sleep $opt->{retries} * 3;
         };
         next RETRY if $not_ok;
         return $res;
@@ -95,7 +95,7 @@ sub get_download_info_as_json {
             $count++;
             $not_ok = 1;
             print SHOW_CURSOR;
-            sleep $opt->{retries} * 2;
+            sleep $opt->{retries} * 3;
         };
         if ( $count > $opt->{retries} ) {
             push @{$opt->{error_get_download_infos}}, $video_id;
